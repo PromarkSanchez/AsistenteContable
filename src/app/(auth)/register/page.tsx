@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
@@ -11,11 +11,19 @@ import { Input } from '@/components/ui/input';
 import { registerSchema, type RegisterInput } from '@/lib/validations';
 import { authApi } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth-store';
+import { useBrandingStore } from '@/store/branding-store';
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const login = useAuthStore((state) => state.login);
+  const { appName, logoBase64, loadBranding, isLoaded } = useBrandingStore();
+
+  useEffect(() => {
+    if (!isLoaded) {
+      loadBranding();
+    }
+  }, [isLoaded, loadBranding]);
 
   const {
     register,
@@ -49,25 +57,31 @@ export default function RegisterPage() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <div className="mx-auto mb-4">
-          <div className="w-16 h-16 bg-primary-600 rounded-xl flex items-center justify-center">
-            <svg
-              className="w-10 h-10 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
+        <div className="flex justify-center mb-4">
+          {logoBase64 ? (
+            <div className="w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center bg-white shadow-md border border-gray-100">
+              <img src={logoBase64} alt={appName} className="w-full h-full object-contain p-1" />
+            </div>
+          ) : (
+            <div className="w-16 h-16 bg-primary-600 rounded-xl flex items-center justify-center">
+              <svg
+                className="w-10 h-10 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+          )}
         </div>
         <CardTitle className="text-2xl">Crear Cuenta</CardTitle>
-        <p className="text-gray-500 mt-2">Regístrate para comenzar</p>
+        <p className="text-gray-500 mt-2">Regístrate en {appName}</p>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

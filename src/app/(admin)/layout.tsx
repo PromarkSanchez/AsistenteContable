@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth-store';
+import { useBrandingStore } from '@/store/branding-store';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import {
   Shield,
@@ -12,6 +13,7 @@ import {
   Bot,
   ArrowLeft,
   LayoutDashboard,
+  Palette,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
@@ -20,6 +22,7 @@ const adminMenuItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/users', label: 'Usuarios', icon: Users },
   { href: '/admin/companies', label: 'Empresas', icon: Building2 },
+  { href: '/admin/branding', label: 'Personalización', icon: Palette },
   { href: '/admin/ai-config', label: 'Configuración IA', icon: Bot },
 ];
 
@@ -31,6 +34,13 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading } = useAuthStore();
+  const { appName, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
+
+  useEffect(() => {
+    if (!brandingLoaded) {
+      loadBranding();
+    }
+  }, [brandingLoaded, loadBranding]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -115,7 +125,7 @@ export default function AdminLayout({
       {/* Footer */}
       <footer className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-4 px-6">
         <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <p>© {new Date().getFullYear()} Contador Virtual. Todos los derechos reservados.</p>
+          <p>© {new Date().getFullYear()} {appName}. Todos los derechos reservados.</p>
           <p>
             Desarrollado por{' '}
             <a

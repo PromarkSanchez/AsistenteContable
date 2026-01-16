@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth-store';
 import { useCompanyStore } from '@/store/company-store';
+import { useBrandingStore } from '@/store/branding-store';
 import { companiesApi } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import {
@@ -51,6 +52,14 @@ export default function DashboardLayout({
 
   const { user, isAuthenticated, logout } = useAuthStore();
   const { selectedCompany, companies, setSelectedCompany, setCompanies } = useCompanyStore();
+  const { appName, logoBase64, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
+
+  // Cargar branding al montar
+  useEffect(() => {
+    if (!brandingLoaded) {
+      loadBranding();
+    }
+  }, [brandingLoaded, loadBranding]);
 
   // Cargar empresas del API al montar o cuando cambie la autenticación
   useEffect(() => {
@@ -100,10 +109,16 @@ export default function DashboardLayout({
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <Calculator className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-semibold text-gray-900 dark:text-white">Contador Virtual</span>
+            {logoBase64 ? (
+              <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-white">
+                <img src={logoBase64} alt={appName} className="w-full h-full object-contain" />
+              </div>
+            ) : (
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+                <Calculator className="w-5 h-5 text-white" />
+              </div>
+            )}
+            <span className="font-semibold text-gray-900 dark:text-white">{appName}</span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -122,7 +137,13 @@ export default function DashboardLayout({
                 className="w-full flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
               >
                 <div className="flex items-center space-x-2 truncate">
-                  <Building2 className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+                  {selectedCompany?.logoBase64 ? (
+                    <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0 bg-white">
+                      <img src={selectedCompany.logoBase64} alt="" className="w-full h-full object-contain" />
+                    </div>
+                  ) : (
+                    <Building2 className="w-5 h-5 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+                  )}
                   <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
                     {selectedCompany?.razonSocial || 'Seleccionar empresa'}
                   </span>
@@ -144,12 +165,23 @@ export default function DashboardLayout({
                         setCompanyDropdownOpen(false);
                       }}
                       className={cn(
-                        'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 dark:text-white',
+                        'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 dark:text-white flex items-center gap-3',
                         selectedCompany?.id === company.id && 'bg-primary-50 dark:bg-primary-900 text-primary-700 dark:text-primary-300'
                       )}
                     >
-                      <div className="font-medium truncate">{company.razonSocial}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{company.ruc}</div>
+                      {company.logoBase64 ? (
+                        <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-white border border-gray-200 dark:border-gray-600">
+                          <img src={company.logoBase64} alt="" className="w-full h-full object-contain" />
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 rounded bg-gray-100 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{company.razonSocial}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{company.ruc}</div>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -244,7 +276,7 @@ export default function DashboardLayout({
           </button>
 
           <div className="flex-1 lg:hidden text-center">
-            <span className="font-semibold text-gray-900 dark:text-white">Contador Virtual</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{appName}</span>
           </div>
 
           <div className="hidden lg:block">
@@ -264,7 +296,7 @@ export default function DashboardLayout({
         {/* Footer */}
         <footer className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-4 px-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <p>© {new Date().getFullYear()} Contador Virtual. Todos los derechos reservados.</p>
+            <p>© {new Date().getFullYear()} {appName}. Todos los derechos reservados.</p>
             <p>
               Desarrollado por{' '}
               <a

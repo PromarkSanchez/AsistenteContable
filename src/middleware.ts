@@ -4,7 +4,7 @@ import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
 
 // Rutas públicas
 const publicPaths = ['/login', '/register'];
-const publicApiPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'];
+const publicApiPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/branding'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

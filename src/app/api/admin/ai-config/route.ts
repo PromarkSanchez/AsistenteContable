@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/ai-config - Obtener configuración de IA
 export async function GET(request: NextRequest) {
   try {
