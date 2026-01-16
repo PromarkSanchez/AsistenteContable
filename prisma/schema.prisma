@@ -1,0 +1,459 @@
+// Prisma Schema para ContadorVirtual
+// Base de datos: PostgreSQL en Vercel con Prisma Accelerate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum Plan {
+  FREE
+  BASIC
+  PRO
+}
+
+enum Regimen {
+  NRUS
+  RER
+  MYPE
+  GENERAL
+}
+
+enum TipoOperacion {
+  VENTA
+  COMPRA
+}
+
+enum EstadoComprobante {
+  ACTIVO
+  ANULADO
+  EMITIDO
+  PENDIENTE
+}
+
+enum EstadoDeclaracion {
+  BORRADOR
+  CALCULADA
+  GENERADA
+  PRESENTADA
+}
+
+enum SettingCategory {
+  AI
+  SUNAT
+  EMAIL
+  GENERAL
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ==================== USUARIOS ====================
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique @db.VarChar(255)
+  hashedPassword String    @map("hashed_password") @db.VarChar(255)
+  fullName       String?   @map("full_name") @db.VarChar(255)
+  isActive       Boolean   @default(true) @map("is_active")
+  isVerified     Boolean   @default(false) @map("is_verified")
+  isSuperadmin   Boolean   @default(false) @map("is_superadmin")
+  plan           Plan      @default(FREE)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  companies Company[]
+
+  @@map("users")
+}
+
+// ==================== EMPRESAS ====================
+
+model Company {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  ruc                 String   @unique @db.VarChar(11)
+  razonSocial         String   @map("razon_social") @db.VarChar(255)
+  nombreComercial     String?  @map("nombre_comercial") @db.VarChar(255)
+  regimen             Regimen
+  tipoContribuyente   String?  @map("tipo_contribuyente") @db.VarChar(50)
+  direccionFiscal     String?  @map("direccion_fiscal") @db.Text
+  ubigeo              String?  @db.VarChar(6)
+  telefono            String?  @db.VarChar(20)
+  email               String?  @db.VarChar(255)
+  coeficienteRenta    String   @default("0.0150") @map("coeficiente_renta") @db.VarChar(10)
+
+  // Logo almacenado como Base64 (sin storage externo)
+  logoBase64          String?  @map("logo_base64") @db.Text
+
+  // Firma digital y huella para informes (Base64)
+  firmaDigitalBase64  String?  @map("firma_digital_base64") @db.Text
+  huellaDigitalBase64 String?  @map("huella_digital_base64") @db.Text
+
+  // Credenciales SUNAT (encriptadas)
+  usuarioSol          String?  @map("usuario_sol") @db.VarChar(255)
+  claveSolEncrypted   String?  @map("clave_sol_encrypted") @db.VarChar(500)
+
+  // Certificado digital para facturación
+  certificadoDigital          String?  @map("certificado_digital") @db.Text
+  certificadoPasswordEncrypted String? @map("certificado_password_encrypted") @db.VarChar(500)
+
+  // Series de comprobantes
+  serieFactura        String   @default("F001") @map("serie_factura") @db.VarChar(4)
+  serieBoleta         String   @default("B001") @map("serie_boleta") @db.VarChar(4)
+  ultimoNumeroFactura Int      @default(0) @map("ultimo_numero_factura")
+  ultimoNumeroBoleta  Int      @default(0) @map("ultimo_numero_boleta")
+
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relaciones
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comprobantes  Comprobante[]
+  declaraciones DeclaracionPDT621[]
+  uploadHistory InvoiceUploadHistory[]
+  storageUsage  StorageUsage?
+  inventarios   Inventario[]
+
+  @@index([userId])
+  @@map("companies")
+}
+
+// ==================== COMPROBANTES ====================
+
+model Comprobante {
+  id                 String            @id @default(uuid()) @db.Uuid
+  companyId          String            @map("company_id") @db.Uuid
+
+  tipo               TipoOperacion
+  tipoDocumento      String            @map("tipo_documento") @db.VarChar(2) // 01=Factura, 03=Boleta, 07=NC, 08=ND
+  serie              String            @db.VarChar(4)
+  numero             String            @db.VarChar(8)
+  fechaEmision       DateTime          @map("fecha_emision") @db.Date
+  fechaVencimiento   DateTime?         @map("fecha_vencimiento") @db.Date
+
+  // === DATOS DEL EMISOR (quien emitió el comprobante) ===
+  rucEmisor          String?           @map("ruc_emisor") @db.VarChar(11)
+  razonSocialEmisor  String?           @map("razon_social_emisor") @db.VarChar(255)
+  direccionEmisor    String?           @map("direccion_emisor") @db.Text
+
+  // === DATOS DEL RECEPTOR/CLIENTE (quien recibe el comprobante) ===
+  tipoDocReceptor    String?           @map("tipo_doc_receptor") @db.VarChar(2) // 6=RUC, 1=DNI
+  numeroDocReceptor  String?           @map("numero_doc_receptor") @db.VarChar(15)
+  razonSocialReceptor String?          @map("razon_social_receptor") @db.VarChar(255)
+
+  // Datos del tercero (para operaciones de la empresa - campo legado)
+  tipoDocTercero     String            @default("6") @map("tipo_doc_tercero") @db.VarChar(2) // 6=RUC, 1=DNI
+  rucTercero         String?           @map("ruc_tercero") @db.VarChar(15)
+  razonSocialTercero String?           @map("razon_social_tercero") @db.VarChar(255)
+
+  // Montos
+  moneda             String            @default("PEN") @db.VarChar(3)
+  tipoCambio         Decimal?          @map("tipo_cambio") @db.Decimal(10, 4)
+  baseImponible      Decimal           @map("base_imponible") @db.Decimal(12, 2)
+  igv                Decimal           @db.Decimal(12, 2)
+  otrosTributos      Decimal           @default(0) @map("otros_tributos") @db.Decimal(12, 2)
+  total              Decimal           @db.Decimal(12, 2)
+
+  // Clasificación tributaria
+  esGravada          Boolean           @default(true) @map("es_gravada")
+  esExportacion      Boolean           @default(false) @map("es_exportacion")
+  afectaIgv          Boolean           @default(true) @map("afecta_igv")
+
+  // Período tributario (YYYYMM)
+  periodo            String            @db.VarChar(6)
+
+  // Estado
+  estado             EstadoComprobante @default(ACTIVO)
+
+  // === FACTURACIÓN ELECTRÓNICA ===
+  xmlFirmado               String?   @map("xml_firmado") @db.Text
+  hashResumen              String?   @map("hash_resumen") @db.VarChar(100)
+  cdrBase64                String?   @map("cdr_base64") @db.Text
+  estadoSunat              String?   @map("estado_sunat") @db.VarChar(20) // PENDIENTE, ACEPTADO, RECHAZADO, CON_OBSERVACIONES
+  codigoRespuestaSunat     String?   @map("codigo_respuesta_sunat") @db.VarChar(10)
+  mensajeRespuestaSunat    String?   @map("mensaje_respuesta_sunat") @db.Text
+
+  // Observaciones/notas del documento
+  observaciones        String?         @db.Text
+
+  // Referencia (para notas de crédito/débito)
+  comprobanteRefTipo   String?         @map("comprobante_ref_tipo") @db.VarChar(2)
+  comprobanteRefSerie  String?         @map("comprobante_ref_serie") @db.VarChar(4)
+  comprobanteRefNumero String?         @map("comprobante_ref_numero") @db.VarChar(8)
+
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   ComprobanteItem[]
+
+  @@unique([companyId, tipoDocumento, serie, numero])
+  @@index([companyId])
+  @@index([periodo])
+  @@index([fechaEmision])
+  @@index([rucTercero])
+  @@map("comprobantes")
+}
+
+// ==================== ITEMS DE COMPROBANTE ====================
+
+model ComprobanteItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  comprobanteId   String   @map("comprobante_id") @db.Uuid
+
+  // Datos del item
+  numeroLinea     Int      @default(1) @map("numero_linea")
+  cantidad        Decimal  @db.Decimal(12, 4)
+  unidadMedida    String   @default("NIU") @map("unidad_medida") @db.VarChar(10)
+  descripcion     String   @db.Text
+  codigoProducto  String?  @map("codigo_producto") @db.VarChar(50)
+
+  // Precios
+  precioUnitario  Decimal  @map("precio_unitario") @db.Decimal(12, 4)
+  valorVenta      Decimal  @map("valor_venta") @db.Decimal(12, 2)
+  descuento       Decimal  @default(0) @db.Decimal(12, 2)
+
+  // Impuestos del item
+  igv             Decimal  @default(0) @db.Decimal(12, 2)
+  isc             Decimal  @default(0) @db.Decimal(12, 2)
+  otrosTributos   Decimal  @default(0) @map("otros_tributos") @db.Decimal(12, 2)
+
+  // Total del item
+  total           Decimal  @db.Decimal(12, 2)
+
+  // Tipo de afectación IGV
+  tipoAfectacionIgv String? @map("tipo_afectacion_igv") @db.VarChar(2) // 10=Gravado, 20=Exonerado, 30=Inafecto
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  comprobante Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+
+  @@index([comprobanteId])
+  @@map("comprobante_items")
+}
+
+// ==================== DECLARACIONES PDT 621 ====================
+
+model DeclaracionPDT621 {
+  id        String            @id @default(uuid()) @db.Uuid
+  companyId String            @map("company_id") @db.Uuid
+  periodo   String            @db.VarChar(6) // YYYYMM
+  estado    EstadoDeclaracion @default(BORRADOR)
+
+  // === VENTAS ===
+  ventasGravadas          Decimal @default(0) @map("ventas_gravadas") @db.Decimal(12, 2)
+  ventasNoGravadas        Decimal @default(0) @map("ventas_no_gravadas") @db.Decimal(12, 2)
+  exportaciones           Decimal @default(0) @db.Decimal(12, 2)
+  descuentosVentas        Decimal @default(0) @map("descuentos_ventas") @db.Decimal(12, 2)
+  otrasVentas             Decimal @default(0) @map("otras_ventas") @db.Decimal(12, 2)
+
+  // === COMPRAS ===
+  comprasGravadasDestGravadas Decimal @default(0) @map("compras_gravadas_dest_gravadas") @db.Decimal(12, 2)
+  comprasGravadasDestMixtas   Decimal @default(0) @map("compras_gravadas_dest_mixtas") @db.Decimal(12, 2)
+  comprasNoGravadas           Decimal @default(0) @map("compras_no_gravadas") @db.Decimal(12, 2)
+  descuentosCompras           Decimal @default(0) @map("descuentos_compras") @db.Decimal(12, 2)
+  importaciones               Decimal @default(0) @db.Decimal(12, 2)
+
+  // === IGV CALCULADO ===
+  debitoFiscal             Decimal @default(0) @map("debito_fiscal") @db.Decimal(12, 2)
+  creditoFiscal            Decimal @default(0) @map("credito_fiscal") @db.Decimal(12, 2)
+  saldoFavorAnterior       Decimal @default(0) @map("saldo_favor_anterior") @db.Decimal(12, 2)
+  retenciones              Decimal @default(0) @db.Decimal(12, 2)
+  percepciones             Decimal @default(0) @db.Decimal(12, 2)
+  igvAPagar                Decimal @default(0) @map("igv_a_pagar") @db.Decimal(12, 2)
+  saldoFavorPeriodo        Decimal @default(0) @map("saldo_favor_periodo") @db.Decimal(12, 2)
+
+  // === RENTA ===
+  ingresosNetos            Decimal @default(0) @map("ingresos_netos") @db.Decimal(12, 2)
+  coeficienteRenta         Decimal @default(0.0150) @map("coeficiente_renta") @db.Decimal(6, 4)
+  pagoCuentaRenta          Decimal @default(0) @map("pago_cuenta_renta") @db.Decimal(12, 2)
+  saldoFavorRentaAnterior  Decimal @default(0) @map("saldo_favor_renta_anterior") @db.Decimal(12, 2)
+
+  // === TOTALES ===
+  totalDeuda               Decimal @default(0) @map("total_deuda") @db.Decimal(12, 2)
+  intereses                Decimal @default(0) @db.Decimal(12, 2)
+
+  // === ARCHIVO GENERADO ===
+  archivoGenerado          String? @map("archivo_generado") @db.Text
+  nombreArchivo            String? @map("nombre_archivo") @db.VarChar(100)
+
+  // === FECHAS ===
+  fechaVencimiento         DateTime? @map("fecha_vencimiento") @db.Date
+  fechaPresentacion        DateTime? @map("fecha_presentacion") @db.Timestamptz
+  numeroOrden              String?   @map("numero_orden") @db.VarChar(20)
+
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, periodo])
+  @@index([companyId])
+  @@index([periodo])
+  @@map("declaraciones_pdt621")
+}
+
+// ==================== TERCEROS (Cache RUC/DNI) ====================
+
+model Tercero {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tipoDocumento      String   @map("tipo_documento") @db.VarChar(2) // 6=RUC, 1=DNI, 4=CE
+  numeroDocumento    String   @unique @map("numero_documento") @db.VarChar(20)
+  razonSocial        String   @map("razon_social") @db.VarChar(500)
+  nombreComercial    String?  @map("nombre_comercial") @db.VarChar(500)
+  direccion          String?  @db.Text
+  ubigeo             String?  @db.VarChar(6)
+  departamento       String?  @db.VarChar(100)
+  provincia          String?  @db.VarChar(100)
+  distrito           String?  @db.VarChar(100)
+  estado             String?  @db.VarChar(50)
+  condicion          String?  @db.VarChar(50)
+  esAgenteRetencion  Boolean  @default(false) @map("es_agente_retencion")
+  esBuenContribuyente Boolean @default(false) @map("es_buen_contribuyente")
+  fuente             String   @default("manual") @db.VarChar(50) // sunat, apis.net.pe, migo.pe, manual
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tipoDocumento])
+  @@map("terceros")
+}
+
+// ==================== CONFIGURACIONES DEL SISTEMA ====================
+
+model SystemSetting {
+  id          String          @id @default(uuid()) @db.Uuid
+  key         String          @unique @db.VarChar(100)
+  value       String          @db.Text
+  category    SettingCategory @default(GENERAL)
+  description String?         @db.VarChar(255)
+  isEncrypted Boolean         @default(false) @map("is_encrypted")
+  isActive    Boolean         @default(true) @map("is_active")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("system_settings")
+}
+
+// ==================== HISTORIAL DE SUBIDA DE FACTURAS (NUEVO) ====================
+
+model InvoiceUploadHistory {
+  id            String       @id @default(uuid()) @db.Uuid
+  companyId     String       @map("company_id") @db.Uuid
+  fileName      String       @map("file_name") @db.VarChar(255)
+  fileType      String       @map("file_type") @db.VarChar(50) // xml, zip, pdf
+  fileSize      Int          @map("file_size") // bytes
+  status        UploadStatus @default(PENDING)
+  processedAt   DateTime?    @map("processed_at") @db.Timestamptz
+  errorMessage  String?      @map("error_message") @db.Text
+
+  // Metadata del comprobante procesado
+  tipoDocumento String?      @map("tipo_documento") @db.VarChar(2)
+  serie         String?      @db.VarChar(4)
+  numero        String?      @db.VarChar(8)
+
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("invoice_upload_history")
+}
+
+// ==================== INVENTARIO ====================
+
+model Inventario {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  companyId       String?  @map("company_id") @db.Uuid
+
+  nombre          String   @db.VarChar(255)
+  descripcion     String?  @db.Text
+  fechaInventario DateTime @map("fecha_inventario") @db.Date
+  codigoEconomato String   @default("130") @map("codigo_economato") @db.VarChar(10)
+  almacenDesc     String?  @map("almacen_desc") @db.VarChar(255)
+
+  // Totales calculados
+  totalInventarioImporte  Decimal @default(0) @map("total_inventario_importe") @db.Decimal(14, 2)
+  totalKardexImporte      Decimal @default(0) @map("total_kardex_importe") @db.Decimal(14, 2)
+  totalSobrantesImporte   Decimal @default(0) @map("total_sobrantes_importe") @db.Decimal(14, 2)
+  totalFaltantesImporte   Decimal @default(0) @map("total_faltantes_importe") @db.Decimal(14, 2)
+
+  totalItems      Int      @default(0) @map("total_items")
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  items   InventarioItem[]
+  company Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([fechaInventario])
+  @@map("inventarios")
+}
+
+model InventarioItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  inventarioId    String   @map("inventario_id") @db.Uuid
+
+  codigoBien        String  @map("codigo_bien") @db.VarChar(50)
+  descripcion       String  @db.Text
+  unidadMedida      String  @map("unidad_medida") @db.VarChar(50)
+
+  // Inventario físico (conteo)
+  inventarioUnidad  Decimal @map("inventario_unidad") @db.Decimal(12, 4)
+  inventarioImporte Decimal @map("inventario_importe") @db.Decimal(14, 2)
+
+  // Kárdex (sistema)
+  kardexUnidad      Decimal @map("kardex_unidad") @db.Decimal(12, 4)
+  costoUnitario     Decimal @map("costo_unitario") @db.Decimal(14, 4)
+  kardexImporte     Decimal @map("kardex_importe") @db.Decimal(14, 2)
+
+  // Diferencias
+  sobrantesUnidad   Decimal @default(0) @map("sobrantes_unidad") @db.Decimal(12, 4)
+  sobrantesImporte  Decimal @default(0) @map("sobrantes_importe") @db.Decimal(14, 2)
+  faltantesUnidad   Decimal @default(0) @map("faltantes_unidad") @db.Decimal(12, 4)
+  faltantesImporte  Decimal @default(0) @map("faltantes_importe") @db.Decimal(14, 2)
+
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  inventario Inventario @relation(fields: [inventarioId], references: [id], onDelete: Cascade)
+
+  @@index([inventarioId])
+  @@index([codigoBien])
+  @@map("inventario_items")
+}
+
+// ==================== INDICADOR DE ALMACENAMIENTO (NUEVO) ====================
+
+model StorageUsage {
+  id                   String   @id @default(uuid()) @db.Uuid
+  companyId            String   @unique @map("company_id") @db.Uuid
+
+  // Uso actual en bytes
+  logosSize            BigInt   @default(0) @map("logos_size")
+  certificatesSize     BigInt   @default(0) @map("certificates_size")
+  generatedFilesSize   BigInt   @default(0) @map("generated_files_size")
+
+  // Límites según plan (50MB default = 52428800 bytes)
+  maxStorage           BigInt   @default(52428800) @map("max_storage")
+
+  lastCalculated       DateTime @default(now()) @map("last_calculated") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("storage_usage")
+}

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+    <ID>F001-00000123</ID>
+    <IssueDate>2024-01-15</IssueDate>
+    <DueDate>2024-02-15</DueDate>
+    <InvoiceTypeCode>01</InvoiceTypeCode>
+    <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+    <AccountingSupplierParty>
+        <Party>
+            <PartyIdentification>
+                <ID schemeID="6">20123456789</ID>
+            </PartyIdentification>
+            <PartyLegalEntity>
+                <RegistrationName>EMPRESA PROVEEDORA SAC</RegistrationName>
+            </PartyLegalEntity>
+        </Party>
+    </AccountingSupplierParty>
+    <AccountingCustomerParty>
+        <Party>
+            <PartyIdentification>
+                <ID schemeID="6">20987654321</ID>
+            </PartyIdentification>
+            <PartyLegalEntity>
+                <RegistrationName>CLIENTE EMPRESA SRL</RegistrationName>
+            </PartyLegalEntity>
+        </Party>
+    </AccountingCustomerParty>
+    <TaxTotal>
+        <TaxAmount currencyID="PEN">180.00</TaxAmount>
+        <TaxSubtotal>
+            <TaxableAmount currencyID="PEN">1000.00</TaxableAmount>
+            <TaxAmount currencyID="PEN">180.00</TaxAmount>
+            <TaxCategory>
+                <TaxScheme>
+                    <ID>1000</ID>
+                    <Name>IGV</Name>
+                </TaxScheme>
+            </TaxCategory>
+        </TaxSubtotal>
+    </TaxTotal>
+    <LegalMonetaryTotal>
+        <PayableAmount currencyID="PEN">1180.00</PayableAmount>
+    </LegalMonetaryTotal>
+    <InvoiceLine>
+        <ID>1</ID>
+        <InvoicedQuantity unitCode="NIU">10</InvoicedQuantity>
+        <LineExtensionAmount currencyID="PEN">1000.00</LineExtensionAmount>
+        <TaxTotal>
+            <TaxAmount currencyID="PEN">180.00</TaxAmount>
+        </TaxTotal>
+        <Item>
+            <Description>Producto de prueba para importacion</Description>
+        </Item>
+        <Price>
+            <PriceAmount currencyID="PEN">100.00</PriceAmount>
+        </Price>
+    </InvoiceLine>
+</Invoice>

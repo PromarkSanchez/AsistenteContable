@@ -1,0 +1,105 @@
+=====================================================
+   CONTADOR VIRTUAL - GUIA DE INICIO DE SERVIDORES
+=====================================================
+
+=====================================================
+   BACKEND (FastAPI - Python)
+=====================================================
+
+1. Abrir terminal (CMD o PowerShell)
+
+2. Navegar al directorio:
+   cd D:\ContadorVirtual\backend
+
+3. Activar entorno virtual (si existe):
+   .venv\Scripts\activate
+
+4. Iniciar servidor:
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+5. El backend estara disponible en:
+   - API: http://localhost:8000
+   - Docs Swagger: http://localhost:8000/docs
+   - Docs ReDoc: http://localhost:8000/redoc
+
+
+=====================================================
+   FRONTEND (React + Vite)
+=====================================================
+
+1. Abrir OTRA terminal (CMD o PowerShell)
+
+2. Navegar al directorio:
+   cd D:\ContadorVirtual\frontend
+
+3. Iniciar servidor de desarrollo:
+   npm run dev
+
+4. El frontend estara disponible en:
+   - http://localhost:5173
+
+
+=====================================================
+   RESUMEN DE COMANDOS RAPIDOS
+=====================================================
+
+Terminal 1 (Backend):
+----------------------
+cd D:\ContadorVirtual\backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+Terminal 2 (Frontend):
+----------------------
+cd D:\ContadorVirtual\frontend && npm run dev
+
+
+=====================================================
+   VERIFICAR QUE ESTAN CORRIENDO
+=====================================================
+
+Backend (en otra terminal):
+curl http://localhost:8000/
+
+Frontend:
+Abrir navegador en http://localhost:5173
+
+
+=====================================================
+   CREDENCIALES DE PRUEBA
+=====================================================
+
+Email: psanchez@atiqtec.com
+Clave: 0449906001
+
+Empresa: ATIQTEC E.I.R.L.
+RUC: 20123456789
+Regimen: MYPE Tributario
+
+
+=====================================================
+   PARA DETENER LOS SERVIDORES
+=====================================================
+
+Presionar Ctrl+C en cada terminal
+
+
+=====================================================
+   PANEL DE ADMINISTRACION (Super Admin)
+=====================================================
+
+URL: http://localhost:5173/admin
+
+Como Super Admin puedes:
+- Ver dashboard con estadisticas globales
+- Gestionar TODAS las empresas del sistema
+- Crear nuevas empresas para tus clientes
+- Gestionar usuarios y sus permisos
+- Configurar la IA (Ollama, AWS Bedrock, OpenAI)
+
+Endpoints API de Admin:
+- GET  /api/v1/admin/dashboard     - Dashboard
+- GET  /api/v1/admin/companies     - Listar empresas
+- POST /api/v1/admin/companies     - Crear empresa
+- GET  /api/v1/admin/users         - Listar usuarios
+- GET  /api/v1/admin/ai-config     - Ver config IA
+- PUT  /api/v1/admin/ai-config     - Actualizar config IA
+
