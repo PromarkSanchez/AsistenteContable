@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
             // Datos del EMISOR del XML (quien emitió el documento)
             rucEmisor: parsed.ruc,
             razonSocialEmisor: parsed.razonSocialEmisor,
+            nombreComercialEmisor: parsed.nombreComercialEmisor || null,
             direccionEmisor: parsed.direccionEmisor || null,
             // Datos del RECEPTOR del XML (quien recibe el documento)
             tipoDocReceptor: parsed.tipoDocTercero,

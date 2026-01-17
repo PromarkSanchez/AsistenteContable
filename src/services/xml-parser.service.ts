@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 export interface ParsedInvoiceXML {
   ruc: string;
   razonSocialEmisor: string;  // Razón social del emisor
+  nombreComercialEmisor?: string; // Nombre comercial del emisor (ej: HJ LOGISTIC)
   direccionEmisor?: string;   // Dirección del emisor
   tipoDocumento: string;
   serie: string;
@@ -77,12 +78,16 @@ export function parseInvoiceXML(xmlContent: string): ParsedInvoiceXML | null {
     const serie = String(idParts[0] || '');
     const numero = String(idParts[1] || '');
 
-    // Extraer RUC y razón social del emisor
+    // Extraer RUC, razón social y nombre comercial del emisor
     const supplier = doc.AccountingSupplierParty?.Party;
     const ruc = String(supplier?.PartyIdentification?.ID?.['#text'] ||
                 supplier?.PartyIdentification?.ID || '');
-    const razonSocialEmisor = String(supplier?.PartyLegalEntity?.RegistrationName ||
-                              supplier?.PartyName?.Name || '');
+    const razonSocialEmisor = String(supplier?.PartyLegalEntity?.RegistrationName || '');
+
+    // Nombre comercial (cbc:Name dentro de PartyName) - ej: HJ LOGISTIC
+    const nombreComercialEmisor = supplier?.PartyName?.Name
+      ? String(supplier.PartyName.Name?.['#text'] || supplier.PartyName.Name || '')
+      : undefined;
 
     // Dirección del emisor
     const supplierAddress = supplier?.PartyLegalEntity?.RegistrationAddress ||
@@ -93,15 +98,32 @@ export function parseInvoiceXML(xmlContent: string): ParsedInvoiceXML | null {
         ? String(supplierAddress.StreetName)
         : undefined;
 
-    // Extraer observaciones/notas
+    // Extraer observaciones/notas (filtrando el monto en letras "SON:")
     const notes = doc.Note;
     let observaciones: string | undefined;
     if (notes) {
+      let notesArray: string[];
       if (Array.isArray(notes)) {
-        observaciones = notes.map((n: any) => String(n?.['#text'] || n || '')).filter(Boolean).join('\n');
+        notesArray = notes.map((n: any) => String(n?.['#text'] || n || '')).filter(Boolean);
       } else {
-        observaciones = String(notes?.['#text'] || notes || '');
+        notesArray = [String(notes?.['#text'] || notes || '')].filter(Boolean);
       }
+
+      // Filtrar notas que contienen el monto en letras (SON: ... SOLES/DOLARES)
+      const filteredNotes = notesArray.filter(note => {
+        const upperNote = note.toUpperCase().trim();
+        // Excluir si empieza con "SON:" o "SON :" o contiene patrones de monto en letras
+        if (upperNote.startsWith('SON:') || upperNote.startsWith('SON :')) {
+          return false;
+        }
+        // Excluir si contiene "Y XX/100 SOLES" o "Y XX/100 DOLARES" (patrón de monto en letras)
+        if (/Y\s+\d+\/100\s+(SOLES|DOLARES|DÓLARES)/i.test(note)) {
+          return false;
+        }
+        return true;
+      });
+
+      observaciones = filteredNotes.length > 0 ? filteredNotes.join('\n') : undefined;
     }
 
     // Extraer Hash CPE de la firma digital
@@ -232,6 +254,7 @@ export function parseInvoiceXML(xmlContent: string): ParsedInvoiceXML | null {
     return {
       ruc,
       razonSocialEmisor,
+      nombreComercialEmisor,
       direccionEmisor,
       tipoDocumento,
       serie: serie || '',

@@ -138,15 +138,16 @@ model Comprobante {
 
   tipo               TipoOperacion
   tipoDocumento      String            @map("tipo_documento") @db.VarChar(2) // 01=Factura, 03=Boleta, 07=NC, 08=ND
-  serie              String            @db.VarChar(4)
-  numero             String            @db.VarChar(8)
+  serie              String            @db.VarChar(10)
+  numero             String            @db.VarChar(20)
   fechaEmision       DateTime          @map("fecha_emision") @db.Date
   fechaVencimiento   DateTime?         @map("fecha_vencimiento") @db.Date
 
   // === DATOS DEL EMISOR (quien emitió el comprobante) ===
-  rucEmisor          String?           @map("ruc_emisor") @db.VarChar(11)
-  razonSocialEmisor  String?           @map("razon_social_emisor") @db.VarChar(255)
-  direccionEmisor    String?           @map("direccion_emisor") @db.Text
+  rucEmisor               String?           @map("ruc_emisor") @db.VarChar(11)
+  razonSocialEmisor       String?           @map("razon_social_emisor") @db.VarChar(255)
+  nombreComercialEmisor   String?           @map("nombre_comercial_emisor") @db.VarChar(255)
+  direccionEmisor         String?           @map("direccion_emisor") @db.Text
 
   // === DATOS DEL RECEPTOR/CLIENTE (quien recibe el comprobante) ===
   tipoDocReceptor    String?           @map("tipo_doc_receptor") @db.VarChar(2) // 6=RUC, 1=DNI
@@ -190,8 +191,8 @@ model Comprobante {
 
   // Referencia (para notas de crédito/débito)
   comprobanteRefTipo   String?         @map("comprobante_ref_tipo") @db.VarChar(2)
-  comprobanteRefSerie  String?         @map("comprobante_ref_serie") @db.VarChar(4)
-  comprobanteRefNumero String?         @map("comprobante_ref_numero") @db.VarChar(8)
+  comprobanteRefSerie  String?         @map("comprobante_ref_serie") @db.VarChar(10)
+  comprobanteRefNumero String?         @map("comprobante_ref_numero") @db.VarChar(20)
 
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz
@@ -360,8 +361,8 @@ model InvoiceUploadHistory {
 
   // Metadata del comprobante procesado
   tipoDocumento String?      @map("tipo_documento") @db.VarChar(2)
-  serie         String?      @db.VarChar(4)
-  numero        String?      @db.VarChar(8)
+  serie         String?      @db.VarChar(10)
+  numero        String?      @db.VarChar(20)
 
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
 

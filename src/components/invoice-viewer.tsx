@@ -141,10 +141,13 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
   const fechaStr = formatDate(comprobante.fechaEmision);
 
   const monedaCode = comprobante.moneda || 'PEN';
+  // Símbolo de moneda: S/ para PEN, $ para USD
+  const monedaSymbol = monedaCode === 'PEN' ? 'S/' : monedaCode === 'USD' ? '$' : monedaCode;
 
   // Datos del emisor - usar los datos del XML si están disponibles
   const emisorRuc = comprobante.rucEmisor || company.ruc;
   const emisorRazonSocial = comprobante.razonSocialEmisor || company.razonSocial;
+  const emisorNombreComercial = comprobante.nombreComercialEmisor || company.nombreComercial;
   const emisorDireccion = comprobante.direccionEmisor || company.direccionFiscal;
 
   // El logo viene de la configuración de la empresa
@@ -250,6 +253,15 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
         try {
           const compressedLogo = await compressImageForPDF(logoBase64, 400, 0.85);
           doc.addImage(compressedLogo, 'JPEG', margin, y, 25, 20);
+
+          // Nombre comercial debajo del logo
+          if (emisorNombreComercial) {
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(26, 82, 118);
+            const nombreComercialLines = doc.splitTextToSize(emisorNombreComercial, 25);
+            doc.text(nombreComercialLines, margin + 12.5, y + 23, { align: 'center' });
+          }
         } catch (e) {
           console.error('Error agregando logo:', e);
         }
@@ -431,16 +443,16 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
 
       // Op. Gravadas
       doc.setTextColor(60, 60, 60);
-      doc.text(`Op. Gravadas (${monedaCode}):`, totalsLabelX, y);
+      doc.text('Op. Gravadas:', totalsLabelX, y);
       doc.setTextColor(30, 30, 30);
-      doc.text(Number(comprobante.baseImponible).toFixed(2), totalsValueX, y, { align: 'right' });
+      doc.text(`${monedaSymbol} ${Number(comprobante.baseImponible).toFixed(2)}`, totalsValueX, y, { align: 'right' });
       y += 6;
 
       // IGV
       doc.setTextColor(60, 60, 60);
-      doc.text(`IGV 18% (${monedaCode}):`, totalsLabelX, y);
+      doc.text('IGV 18%:', totalsLabelX, y);
       doc.setTextColor(30, 30, 30);
-      doc.text(Number(comprobante.igv).toFixed(2), totalsValueX, y, { align: 'right' });
+      doc.text(`${monedaSymbol} ${Number(comprobante.igv).toFixed(2)}`, totalsValueX, y, { align: 'right' });
       y += 8;
 
       // Total destacado - alineado con las columnas de la tabla
@@ -449,8 +461,8 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
-      doc.text(`TOTAL (${monedaCode}):`, totalsLabelX, y + 2);
-      doc.text(Number(comprobante.total).toFixed(2), totalsValueX, y + 2, { align: 'right' });
+      doc.text('TOTAL:', totalsLabelX, y + 2);
+      doc.text(`${monedaSymbol} ${Number(comprobante.total).toFixed(2)}`, totalsValueX, y + 2, { align: 'right' });
       y += 16;
 
       // ============ SON ============
@@ -597,11 +609,19 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
                 {/* Left: Logo + Company Info (EMISOR) */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
                   {logoBase64 && (
-                    <img
-                      src={logoBase64}
-                      alt={emisorRazonSocial}
-                      style={{ maxHeight: '70px', maxWidth: '100px', objectFit: 'contain', marginRight: '15px' }}
-                    />
+                    <div style={{ marginRight: '15px', textAlign: 'center' }}>
+                      <img
+                        src={logoBase64}
+                        alt={emisorRazonSocial}
+                        style={{ maxHeight: '70px', maxWidth: '100px', objectFit: 'contain' }}
+                      />
+                      {/* Nombre comercial debajo del logo */}
+                      {emisorNombreComercial && (
+                        <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#1a5276', marginTop: '4px', maxWidth: '100px' }}>
+                          {emisorNombreComercial}
+                        </div>
+                      )}
+                    </div>
                   )}
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '3px', color: '#1f2937' }}>
@@ -720,12 +740,12 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
                 <div style={{ width: '280px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '11px' }}>
-                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px', color: '#6b7280' }}>Op. Gravadas ({monedaCode}):</div>
-                    <div style={{ width: '100px', textAlign: 'right', color: '#1f2937' }}>{Number(comprobante.baseImponible).toFixed(2)}</div>
+                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px', color: '#6b7280' }}>Op. Gravadas:</div>
+                    <div style={{ width: '100px', textAlign: 'right', color: '#1f2937' }}>{monedaSymbol} {Number(comprobante.baseImponible).toFixed(2)}</div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '11px' }}>
-                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px', color: '#6b7280' }}>IGV 18% ({monedaCode}):</div>
-                    <div style={{ width: '100px', textAlign: 'right', color: '#1f2937' }}>{Number(comprobante.igv).toFixed(2)}</div>
+                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px', color: '#6b7280' }}>IGV 18%:</div>
+                    <div style={{ width: '100px', textAlign: 'right', color: '#1f2937' }}>{monedaSymbol} {Number(comprobante.igv).toFixed(2)}</div>
                   </div>
                   <div style={{
                     display: 'flex',
@@ -738,8 +758,8 @@ export function InvoiceViewer({ comprobante: initialComprobante, company, onClos
                     marginTop: '5px',
                     borderRadius: '4px'
                   }}>
-                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px' }}>TOTAL ({monedaCode}):</div>
-                    <div style={{ width: '100px', textAlign: 'right' }}>{Number(comprobante.total).toFixed(2)}</div>
+                    <div style={{ textAlign: 'right', flex: 1, paddingRight: '20px' }}>TOTAL:</div>
+                    <div style={{ width: '100px', textAlign: 'right' }}>{monedaSymbol} {Number(comprobante.total).toFixed(2)}</div>
                   </div>
                 </div>
               </div>

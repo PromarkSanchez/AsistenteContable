@@ -101,6 +101,7 @@ export interface Comprobante {
   // Datos del emisor del XML
   rucEmisor: string | null;
   razonSocialEmisor: string | null;
+  nombreComercialEmisor: string | null;
   direccionEmisor: string | null;
   // Datos del receptor del XML
   tipoDocReceptor: string | null;
