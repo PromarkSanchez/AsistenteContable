@@ -24,6 +24,21 @@ const TIPO_DOCUMENTO_NOMBRES: Record<string, string> = {
   '08': 'Nota de Débito',
 };
 
+// Mapeo de tipos de documento de identidad (texto a código SUNAT)
+const TIPO_DOC_IDENTIDAD_MAP: Record<string, string> = {
+  'DNI': '1',
+  'RUC': '6',
+  'CE': '4',       // Carnet de extranjería
+  'PAS': '7',      // Pasaporte
+  'PASAPORTE': '7',
+  'CDI': 'A',      // Cédula diplomática
+  '1': '1',
+  '4': '4',
+  '6': '6',
+  '7': '7',
+  'A': 'A',
+};
+
 export function parseQRSunat(qrData: string): QRData | null {
   try {
     // Limpiar el QR
@@ -92,6 +107,9 @@ export function parseQRSunat(qrData: string): QRData | null {
       }
     }
 
+    // Convertir tipo de documento de identidad a código SUNAT
+    const tipoDocClienteNormalizado = TIPO_DOC_IDENTIDAD_MAP[tipoDocCliente.toUpperCase()] || tipoDocCliente.substring(0, 2);
+
     return {
       ruc,
       tipoDocumento,
@@ -102,7 +120,7 @@ export function parseQRSunat(qrData: string): QRData | null {
       total,
       fecha,
       fechaISO,
-      tipoDocCliente,
+      tipoDocCliente: tipoDocClienteNormalizado,
       numDocCliente,
       hash,
       baseImponible,
