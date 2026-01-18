@@ -16,6 +16,12 @@ import {
   UserCheck,
   UserX,
   Crown,
+  X,
+  Check,
+  Building2,
+  Bot,
+  FileText,
+  Zap,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -31,6 +37,44 @@ interface User {
   companiesCount: number;
 }
 
+// Definición de planes con sus características
+const PLANS_INFO = {
+  FREE: {
+    name: 'FREE',
+    color: 'gray',
+    description: 'Plan gratuito básico',
+    features: [
+      { label: '1 empresa', icon: Building2 },
+      { label: 'Sin asistente IA', icon: Bot, disabled: true },
+      { label: '50 comprobantes/mes', icon: FileText },
+    ],
+    price: 'Gratis',
+  },
+  BASIC: {
+    name: 'BASIC',
+    color: 'blue',
+    description: 'Para pequeños negocios',
+    features: [
+      { label: '3 empresas', icon: Building2 },
+      { label: 'IA básica (50 consultas)', icon: Bot },
+      { label: '500 comprobantes/mes', icon: FileText },
+    ],
+    price: 'S/ 29.90/mes',
+  },
+  PRO: {
+    name: 'PRO',
+    color: 'yellow',
+    description: 'Acceso completo',
+    features: [
+      { label: 'Empresas ilimitadas', icon: Building2 },
+      { label: 'IA avanzada ilimitada', icon: Bot },
+      { label: 'Comprobantes ilimitados', icon: FileText },
+      { label: 'Alertas y licitaciones', icon: Zap },
+    ],
+    price: 'S/ 79.90/mes',
+  },
+} as const;
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +83,8 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
+  const [planModalUser, setPlanModalUser] = useState<User | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<string>('');
   const { accessToken, user: currentUser } = useAuthStore();
   const limit = 15;
 
@@ -133,15 +179,24 @@ export default function AdminUsersPage() {
     }
   };
 
-  const cyclePlan = (user: User) => {
-    // Ciclar entre FREE -> BASIC -> PRO -> FREE
-    const planCycle: Record<string, string> = {
-      'FREE': 'BASIC',
-      'BASIC': 'PRO',
-      'PRO': 'FREE',
-    };
-    const newPlan = planCycle[user.plan] || 'FREE';
-    handleUpdateUser(user.id, { plan: newPlan } as any);
+  const openPlanModal = (user: User) => {
+    setPlanModalUser(user);
+    setSelectedPlan(user.plan);
+  };
+
+  const closePlanModal = () => {
+    setPlanModalUser(null);
+    setSelectedPlan('');
+  };
+
+  const handleChangePlan = async () => {
+    if (!planModalUser || !selectedPlan || selectedPlan === planModalUser.plan) {
+      closePlanModal();
+      return;
+    }
+
+    await handleUpdateUser(planModalUser.id, { plan: selectedPlan } as any);
+    closePlanModal();
   };
 
   const getPlanStyle = (plan: string) => {
@@ -270,12 +325,13 @@ export default function AdminUsersPage() {
                         </td>
                         <td className="p-3">
                           <button
-                            onClick={() => cyclePlan(user)}
-                            title="Clic para cambiar plan (FREE → BASIC → PRO)"
+                            onClick={() => openPlanModal(user)}
+                            title="Clic para cambiar plan"
                             className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${getPlanStyle(user.plan)}`}
                           >
                             {user.plan === 'PRO' && <Crown className="w-3 h-3" />}
                             {user.plan}
+                            <Edit className="w-3 h-3 ml-1 opacity-50" />
                           </button>
                         </td>
                         <td className="p-3 text-center text-gray-600 dark:text-gray-400">
@@ -372,6 +428,149 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Cambio de Plan */}
+      {planModalUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Cambiar Plan de Usuario
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {planModalUser.fullName || planModalUser.email}
+                </p>
+              </div>
+              <button
+                onClick={closePlanModal}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Plan actual */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Plan actual: <span className={`font-semibold ${
+                  planModalUser.plan === 'PRO' ? 'text-yellow-600' :
+                  planModalUser.plan === 'BASIC' ? 'text-blue-600' : 'text-gray-600'
+                }`}>{planModalUser.plan}</span>
+              </p>
+            </div>
+
+            {/* Opciones de planes */}
+            <div className="p-4 grid gap-4 sm:grid-cols-3">
+              {(Object.keys(PLANS_INFO) as Array<keyof typeof PLANS_INFO>).map((planKey) => {
+                const plan = PLANS_INFO[planKey];
+                const isSelected = selectedPlan === planKey;
+                const isCurrent = planModalUser.plan === planKey;
+
+                return (
+                  <button
+                    key={planKey}
+                    onClick={() => setSelectedPlan(planKey)}
+                    className={`relative p-4 rounded-xl border-2 text-left transition-all ${
+                      isSelected
+                        ? plan.color === 'yellow'
+                          ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20'
+                          : plan.color === 'blue'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-gray-500 bg-gray-50 dark:bg-gray-700'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    {/* Badge de plan actual */}
+                    {isCurrent && (
+                      <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
+                        Actual
+                      </span>
+                    )}
+
+                    {/* Check de selección */}
+                    {isSelected && (
+                      <span className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center ${
+                        plan.color === 'yellow' ? 'bg-yellow-500' :
+                        plan.color === 'blue' ? 'bg-blue-500' : 'bg-gray-500'
+                      }`}>
+                        <Check className="w-3 h-3 text-white" />
+                      </span>
+                    )}
+
+                    {/* Nombre del plan */}
+                    <div className="flex items-center gap-2 mb-2">
+                      {planKey === 'PRO' && <Crown className="w-5 h-5 text-yellow-500" />}
+                      <h3 className={`font-bold text-lg ${
+                        plan.color === 'yellow' ? 'text-yellow-700 dark:text-yellow-400' :
+                        plan.color === 'blue' ? 'text-blue-700 dark:text-blue-400' :
+                        'text-gray-700 dark:text-gray-300'
+                      }`}>
+                        {plan.name}
+                      </h3>
+                    </div>
+
+                    {/* Precio */}
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                      {plan.price}
+                    </p>
+
+                    {/* Descripción */}
+                    <p className="text-xs text-gray-500 mb-3">{plan.description}</p>
+
+                    {/* Features */}
+                    <ul className="space-y-1.5">
+                      {plan.features.map((feature, idx) => (
+                        <li
+                          key={idx}
+                          className={`flex items-center gap-2 text-xs ${
+                            'disabled' in feature && feature.disabled
+                              ? 'text-gray-400 line-through'
+                              : 'text-gray-600 dark:text-gray-400'
+                          }`}
+                        >
+                          <feature.icon className="w-3.5 h-3.5" />
+                          {feature.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+              <Button variant="outline" onClick={closePlanModal}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleChangePlan}
+                disabled={saving || selectedPlan === planModalUser.plan}
+                className={
+                  selectedPlan === 'PRO'
+                    ? 'bg-yellow-600 hover:bg-yellow-700'
+                    : selectedPlan === 'BASIC'
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : ''
+                }
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                    Guardando...
+                  </span>
+                ) : selectedPlan === planModalUser.plan ? (
+                  'Sin cambios'
+                ) : (
+                  `Cambiar a ${selectedPlan}`
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
