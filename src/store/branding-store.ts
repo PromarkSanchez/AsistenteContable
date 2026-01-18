@@ -13,7 +13,7 @@ interface BrandingState {
 }
 
 export const useBrandingStore = create<BrandingState>()((set, get) => ({
-  appName: 'Contador Virtual',
+  appName: 'Gestión Empresarial',
   appDescription: 'Sistema de Gestión Tributaria',
   logoBase64: null,
   faviconBase64: null,
@@ -31,7 +31,7 @@ export const useBrandingStore = create<BrandingState>()((set, get) => ({
       if (response.ok) {
         const data = await response.json();
         set({
-          appName: data.appName || 'Contador Virtual',
+          appName: data.appName || 'Gestión Empresarial',
           appDescription: data.appDescription || 'Sistema de Gestión Tributaria',
           logoBase64: data.logoBase64 || null,
           faviconBase64: data.faviconBase64 || null,

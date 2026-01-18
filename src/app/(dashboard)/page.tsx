@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useCompanyStore } from '@/store/company-store';
 import { useAuthStore } from '@/store/auth-store';
+import { useBrandingStore } from '@/store/branding-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency, getCurrentPeriodo, formatPeriodo, REGIMEN_NOMBRES } from '@/lib/utils';
@@ -18,6 +19,7 @@ import {
 
 export default function DashboardPage() {
   const { selectedCompany, companies } = useCompanyStore();
+  const { appName } = useBrandingStore();
   const { user } = useAuthStore();
 
   // Si no hay empresa, mostrar mensaje para crear una
@@ -28,7 +30,7 @@ export default function DashboardPage() {
           <Building2 className="w-10 h-10 text-primary-600" />
         </div>
         <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-          ¡Bienvenido a Contador Virtual!
+          ¡Bienvenido a {appName}!
         </h2>
         <p className="text-gray-600 mb-6 max-w-md">
           Para comenzar, necesitas registrar tu primera empresa. Esto te permitirá

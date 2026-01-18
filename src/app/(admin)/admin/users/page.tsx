@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import {
   Users,
   Search,
-  Edit,
   Trash2,
   ChevronLeft,
   ChevronRight,
@@ -16,12 +15,12 @@ import {
   UserCheck,
   UserX,
   Crown,
-  X,
-  Check,
   Building2,
   Bot,
   FileText,
   Zap,
+  Loader2,
+  Save,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -37,43 +36,14 @@ interface User {
   companiesCount: number;
 }
 
-// Definición de planes con sus características
-const PLANS_INFO = {
-  FREE: {
-    name: 'FREE',
-    color: 'gray',
-    description: 'Plan gratuito básico',
-    features: [
-      { label: '1 empresa', icon: Building2 },
-      { label: 'Sin asistente IA', icon: Bot, disabled: true },
-      { label: '50 comprobantes/mes', icon: FileText },
-    ],
-    price: 'Gratis',
-  },
-  BASIC: {
-    name: 'BASIC',
-    color: 'blue',
-    description: 'Para pequeños negocios',
-    features: [
-      { label: '3 empresas', icon: Building2 },
-      { label: 'IA básica (50 consultas)', icon: Bot },
-      { label: '500 comprobantes/mes', icon: FileText },
-    ],
-    price: 'S/ 29.90/mes',
-  },
-  PRO: {
-    name: 'PRO',
-    color: 'yellow',
-    description: 'Acceso completo',
-    features: [
-      { label: 'Empresas ilimitadas', icon: Building2 },
-      { label: 'IA avanzada ilimitada', icon: Bot },
-      { label: 'Comprobantes ilimitados', icon: FileText },
-      { label: 'Alertas y licitaciones', icon: Zap },
-    ],
-    price: 'S/ 79.90/mes',
-  },
-} as const;
+// Track pending changes per user
+interface PendingChanges {
+  [userId: string]: {
+    plan?: string;
+    isActive?: boolean;
+    isSuperadmin?: boolean;
+  };
+}
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -81,10 +51,8 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [planModalUser, setPlanModalUser] = useState<User | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
+  const [pendingChanges, setPendingChanges] = useState<PendingChanges>({});
+  const [savingUsers, setSavingUsers] = useState<Set<string>>(new Set());
   const { accessToken, user: currentUser } = useAuthStore();
   const limit = 15;
 
@@ -108,6 +76,7 @@ export default function AdminUsersPage() {
       const data = await response.json();
       setUsers(data.data);
       setTotal(data.total);
+      setPendingChanges({}); // Clear pending changes on reload
     } catch (err) {
       console.error(err);
     } finally {
@@ -125,16 +94,63 @@ export default function AdminUsersPage() {
     loadUsers();
   };
 
-  const handleUpdateUser = async (userId: string, updates: Partial<User>) => {
+  // Track a change for a user
+  const trackChange = (userId: string, field: string, value: unknown) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    setPendingChanges(prev => {
+      const userChanges = prev[userId] || {};
+      const originalValue = user[field as keyof User];
+
+      // If the value is back to original, remove the change
+      if (value === originalValue) {
+        const newChanges = { ...userChanges };
+        delete newChanges[field as keyof typeof newChanges];
+        if (Object.keys(newChanges).length === 0) {
+          const restChanges = { ...prev };
+          delete restChanges[userId];
+          return restChanges;
+        }
+        return { ...prev, [userId]: newChanges };
+      }
+
+      return {
+        ...prev,
+        [userId]: { ...userChanges, [field]: value }
+      };
+    });
+  };
+
+  // Get the current value (pending or original)
+  const getValue = (user: User, field: keyof User) => {
+    const pending = pendingChanges[user.id];
+    if (pending && field in pending) {
+      return pending[field as keyof typeof pending];
+    }
+    return user[field];
+  };
+
+  // Check if user has pending changes
+  const hasPendingChanges = (userId: string) => {
+    return !!pendingChanges[userId] && Object.keys(pendingChanges[userId]).length > 0;
+  };
+
+  // Save changes for a specific user
+  const saveUserChanges = async (userId: string) => {
+    const changes = pendingChanges[userId];
+    if (!changes || Object.keys(changes).length === 0) return;
+
+    setSavingUsers(prev => new Set(prev).add(userId));
+
     try {
-      setSaving(true);
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(changes),
       });
 
       if (!response.ok) {
@@ -143,13 +159,36 @@ export default function AdminUsersPage() {
         return;
       }
 
-      await loadUsers();
-      setEditingUser(null);
+      // Update local state
+      setUsers(prev => prev.map(u => {
+        if (u.id === userId) {
+          return { ...u, ...changes };
+        }
+        return u;
+      }));
+
+      // Clear pending changes for this user
+      setPendingChanges(prev => {
+        const { [userId]: _, ...rest } = prev;
+        return rest;
+      });
     } catch (err) {
       console.error(err);
       alert('Error actualizando usuario');
     } finally {
-      setSaving(false);
+      setSavingUsers(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }
+  };
+
+  // Save all pending changes
+  const saveAllChanges = async () => {
+    const userIds = Object.keys(pendingChanges);
+    for (const userId of userIds) {
+      await saveUserChanges(userId);
     }
   };
 
@@ -179,48 +218,19 @@ export default function AdminUsersPage() {
     }
   };
 
-  const openPlanModal = (user: User) => {
-    setPlanModalUser(user);
-    setSelectedPlan(user.plan);
-  };
-
-  const closePlanModal = () => {
-    setPlanModalUser(null);
-    setSelectedPlan('');
-  };
-
-  const handleChangePlan = async () => {
-    if (!planModalUser || !selectedPlan || selectedPlan === planModalUser.plan) {
-      closePlanModal();
-      return;
-    }
-
-    await handleUpdateUser(planModalUser.id, { plan: selectedPlan } as any);
-    closePlanModal();
-  };
-
-  const getPlanStyle = (plan: string) => {
+  const getPlanStyle = (plan: string, isChanged: boolean) => {
+    const baseStyle = isChanged ? 'ring-2 ring-offset-1 ' : '';
     switch (plan) {
       case 'PRO':
-        return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400';
+        return baseStyle + 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 ring-yellow-500';
       case 'BASIC':
-        return 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400';
+        return baseStyle + 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 ring-blue-500';
       default:
-        return 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300';
+        return baseStyle + 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 ring-gray-500';
     }
   };
 
-  const toggleActive = (user: User) => {
-    handleUpdateUser(user.id, { isActive: !user.isActive } as any);
-  };
-
-  const toggleAdmin = (user: User) => {
-    if (user.id === currentUser?.id) {
-      alert('No puedes quitarte tus propios privilegios de administrador');
-      return;
-    }
-    handleUpdateUser(user.id, { isSuperadmin: !user.isSuperadmin } as any);
-  };
+  const totalPendingChanges = Object.keys(pendingChanges).length;
 
   return (
     <div className="space-y-6">
@@ -229,6 +239,12 @@ export default function AdminUsersPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Gestión de Usuarios</h1>
           <p className="text-gray-600 dark:text-gray-400">Administra los usuarios del sistema</p>
         </div>
+        {totalPendingChanges > 0 && (
+          <Button onClick={saveAllChanges} className="bg-green-600 hover:bg-green-700">
+            <Save className="w-4 h-4 mr-2" />
+            Guardar {totalPendingChanges} cambio{totalPendingChanges > 1 ? 's' : ''}
+          </Button>
+        )}
       </div>
 
       {/* Leyenda de Planes */}
@@ -247,13 +263,13 @@ export default function AdminUsersPage() {
               <span className="px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-xs font-medium inline-flex items-center gap-1">
                 <Crown className="w-3 h-3" /> PRO
               </span>
-              <span className="text-gray-600 dark:text-gray-400">Ilimitado, todas las funciones IA</span>
+              <span className="text-gray-600 dark:text-gray-400">Ilimitado, todas las funciones</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="px-2 py-1 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs font-medium inline-flex items-center gap-1">
                 <Shield className="w-3 h-3" /> Admin
               </span>
-              <span className="text-gray-600 dark:text-gray-400">Acceso total automático</span>
+              <span className="text-gray-600 dark:text-gray-400">Acceso total</span>
             </div>
           </div>
         </CardContent>
@@ -313,87 +329,132 @@ export default function AdminUsersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((user) => (
-                      <tr key={user.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        <td className="p-3">
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {user.fullName || 'Sin nombre'}
-                            </p>
-                            <p className="text-xs text-gray-500">{user.email}</p>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => openPlanModal(user)}
-                            title="Clic para cambiar plan"
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${getPlanStyle(user.plan)}`}
-                          >
-                            {user.plan === 'PRO' && <Crown className="w-3 h-3" />}
-                            {user.plan}
-                            <Edit className="w-3 h-3 ml-1 opacity-50" />
-                          </button>
-                        </td>
-                        <td className="p-3 text-center text-gray-600 dark:text-gray-400">
-                          {user.companiesCount}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => toggleActive(user)}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                              user.isActive
-                                ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                                : 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
-                            }`}
-                          >
-                            {user.isActive ? (
-                              <>
-                                <UserCheck className="w-3 h-3" /> Activo
-                              </>
-                            ) : (
-                              <>
-                                <UserX className="w-3 h-3" /> Inactivo
-                              </>
-                            )}
-                          </button>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => toggleAdmin(user)}
-                            disabled={user.id === currentUser?.id}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                              user.isSuperadmin
-                                ? 'bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
-                            } ${user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            {user.isSuperadmin ? (
-                              <>
-                                <Shield className="w-3 h-3" /> Admin
-                              </>
-                            ) : (
-                              <>
-                                <ShieldOff className="w-3 h-3" /> No
-                              </>
-                            )}
-                          </button>
-                        </td>
-                        <td className="p-3 text-gray-600 dark:text-gray-400">
-                          {new Date(user.createdAt).toLocaleDateString('es-PE')}
-                        </td>
-                        <td className="p-3 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteUser(user.id, user.email)}
-                            disabled={user.id === currentUser?.id}
-                            title={user.id === currentUser?.id ? 'No puedes eliminarte a ti mismo' : 'Eliminar usuario'}
-                          >
-                            <Trash2 className={`w-4 h-4 ${user.id === currentUser?.id ? 'text-gray-300' : 'text-red-500'}`} />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {users.map((user) => {
+                      const currentPlan = getValue(user, 'plan') as string;
+                      const currentIsActive = getValue(user, 'isActive') as boolean;
+                      const currentIsSuperadmin = getValue(user, 'isSuperadmin') as boolean;
+                      const hasChanges = hasPendingChanges(user.id);
+                      const isSaving = savingUsers.has(user.id);
+                      const isPlanChanged = pendingChanges[user.id]?.plan !== undefined;
+                      const isActiveChanged = pendingChanges[user.id]?.isActive !== undefined;
+                      const isAdminChanged = pendingChanges[user.id]?.isSuperadmin !== undefined;
+
+                      return (
+                        <tr
+                          key={user.id}
+                          className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${
+                            hasChanges ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''
+                          }`}
+                        >
+                          <td className="p-3">
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {user.fullName || 'Sin nombre'}
+                              </p>
+                              <p className="text-xs text-gray-500">{user.email}</p>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={currentPlan}
+                              onChange={(e) => trackChange(user.id, 'plan', e.target.value)}
+                              className={`px-2 py-1 rounded-full text-xs font-medium cursor-pointer border-0 appearance-none ${getPlanStyle(currentPlan, isPlanChanged)}`}
+                              style={{ backgroundImage: 'none' }}
+                            >
+                              <option value="FREE">FREE</option>
+                              <option value="BASIC">BASIC</option>
+                              <option value="PRO">PRO</option>
+                            </select>
+                          </td>
+                          <td className="p-3 text-center text-gray-600 dark:text-gray-400">
+                            {user.companiesCount}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => trackChange(user.id, 'isActive', !currentIsActive)}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                                isActiveChanged ? 'ring-2 ring-offset-1 ' : ''
+                              }${
+                                currentIsActive
+                                  ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 ring-green-500'
+                                  : 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 ring-red-500'
+                              }`}
+                            >
+                              {currentIsActive ? (
+                                <>
+                                  <UserCheck className="w-3 h-3" /> Activo
+                                </>
+                              ) : (
+                                <>
+                                  <UserX className="w-3 h-3" /> Inactivo
+                                </>
+                              )}
+                            </button>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => {
+                                if (user.id === currentUser?.id) {
+                                  alert('No puedes quitarte tus propios privilegios de administrador');
+                                  return;
+                                }
+                                trackChange(user.id, 'isSuperadmin', !currentIsSuperadmin);
+                              }}
+                              disabled={user.id === currentUser?.id}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                                isAdminChanged ? 'ring-2 ring-offset-1 ' : ''
+                              }${
+                                currentIsSuperadmin
+                                  ? 'bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 ring-purple-500'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 ring-gray-500'
+                              } ${user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              {currentIsSuperadmin ? (
+                                <>
+                                  <Shield className="w-3 h-3" /> Admin
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldOff className="w-3 h-3" /> No
+                                </>
+                              )}
+                            </button>
+                          </td>
+                          <td className="p-3 text-gray-600 dark:text-gray-400">
+                            {new Date(user.createdAt).toLocaleDateString('es-PE')}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center justify-center gap-1">
+                              {hasChanges && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => saveUserChanges(user.id)}
+                                  disabled={isSaving}
+                                  title="Guardar cambios"
+                                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                >
+                                  {isSaving ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Save className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteUser(user.id, user.email)}
+                                disabled={user.id === currentUser?.id}
+                                title={user.id === currentUser?.id ? 'No puedes eliminarte a ti mismo' : 'Eliminar usuario'}
+                              >
+                                <Trash2 className={`w-4 h-4 ${user.id === currentUser?.id ? 'text-gray-300' : 'text-red-500'}`} />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -429,146 +490,21 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
-      {/* Modal de Cambio de Plan */}
-      {planModalUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Cambiar Plan de Usuario
-                </h2>
-                <p className="text-sm text-gray-500">
-                  {planModalUser.fullName || planModalUser.email}
-                </p>
-              </div>
-              <button
-                onClick={closePlanModal}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Plan actual */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/50">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Plan actual: <span className={`font-semibold ${
-                  planModalUser.plan === 'PRO' ? 'text-yellow-600' :
-                  planModalUser.plan === 'BASIC' ? 'text-blue-600' : 'text-gray-600'
-                }`}>{planModalUser.plan}</span>
-              </p>
-            </div>
-
-            {/* Opciones de planes */}
-            <div className="p-4 grid gap-4 sm:grid-cols-3">
-              {(Object.keys(PLANS_INFO) as Array<keyof typeof PLANS_INFO>).map((planKey) => {
-                const plan = PLANS_INFO[planKey];
-                const isSelected = selectedPlan === planKey;
-                const isCurrent = planModalUser.plan === planKey;
-
-                return (
-                  <button
-                    key={planKey}
-                    onClick={() => setSelectedPlan(planKey)}
-                    className={`relative p-4 rounded-xl border-2 text-left transition-all ${
-                      isSelected
-                        ? plan.color === 'yellow'
-                          ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20'
-                          : plan.color === 'blue'
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                          : 'border-gray-500 bg-gray-50 dark:bg-gray-700'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                    }`}
-                  >
-                    {/* Badge de plan actual */}
-                    {isCurrent && (
-                      <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
-                        Actual
-                      </span>
-                    )}
-
-                    {/* Check de selección */}
-                    {isSelected && (
-                      <span className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center ${
-                        plan.color === 'yellow' ? 'bg-yellow-500' :
-                        plan.color === 'blue' ? 'bg-blue-500' : 'bg-gray-500'
-                      }`}>
-                        <Check className="w-3 h-3 text-white" />
-                      </span>
-                    )}
-
-                    {/* Nombre del plan */}
-                    <div className="flex items-center gap-2 mb-2">
-                      {planKey === 'PRO' && <Crown className="w-5 h-5 text-yellow-500" />}
-                      <h3 className={`font-bold text-lg ${
-                        plan.color === 'yellow' ? 'text-yellow-700 dark:text-yellow-400' :
-                        plan.color === 'blue' ? 'text-blue-700 dark:text-blue-400' :
-                        'text-gray-700 dark:text-gray-300'
-                      }`}>
-                        {plan.name}
-                      </h3>
-                    </div>
-
-                    {/* Precio */}
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                      {plan.price}
-                    </p>
-
-                    {/* Descripción */}
-                    <p className="text-xs text-gray-500 mb-3">{plan.description}</p>
-
-                    {/* Features */}
-                    <ul className="space-y-1.5">
-                      {plan.features.map((feature, idx) => (
-                        <li
-                          key={idx}
-                          className={`flex items-center gap-2 text-xs ${
-                            'disabled' in feature && feature.disabled
-                              ? 'text-gray-400 line-through'
-                              : 'text-gray-600 dark:text-gray-400'
-                          }`}
-                        >
-                          <feature.icon className="w-3.5 h-3.5" />
-                          {feature.label}
-                        </li>
-                      ))}
-                    </ul>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-              <Button variant="outline" onClick={closePlanModal}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleChangePlan}
-                disabled={saving || selectedPlan === planModalUser.plan}
-                className={
-                  selectedPlan === 'PRO'
-                    ? 'bg-yellow-600 hover:bg-yellow-700'
-                    : selectedPlan === 'BASIC'
-                    ? 'bg-blue-600 hover:bg-blue-700'
-                    : ''
-                }
-              >
-                {saving ? (
-                  <span className="flex items-center gap-2">
-                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                    Guardando...
-                  </span>
-                ) : selectedPlan === planModalUser.plan ? (
-                  'Sin cambios'
-                ) : (
-                  `Cambiar a ${selectedPlan}`
-                )}
-              </Button>
-            </div>
-          </div>
+      {/* Indicador flotante de cambios pendientes */}
+      {totalPendingChanges > 0 && (
+        <div className="fixed bottom-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 z-50">
+          <span className="text-sm font-medium">
+            {totalPendingChanges} usuario{totalPendingChanges > 1 ? 's' : ''} con cambios sin guardar
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={saveAllChanges}
+            className="bg-white text-amber-600 hover:bg-amber-50"
+          >
+            <Save className="w-4 h-4 mr-1" />
+            Guardar todo
+          </Button>
         </div>
       )}
     </div>

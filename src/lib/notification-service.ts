@@ -4,6 +4,7 @@
 
 import prisma from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
+import { getAppName } from '@/lib/branding';
 
 interface EmailConfig {
   host: string;
@@ -67,13 +68,16 @@ async function getSmtpConfig(): Promise<EmailConfig | null> {
     return null;
   }
 
+  // Obtener nombre de la app para el fromName por defecto
+  const defaultFromName = await getAppName();
+
   return {
     host: config.smtp_host,
     port: parseInt(config.smtp_port),
     user: config.smtp_user || '',
     password: config.smtp_password || '',
     fromEmail: config.smtp_from_email,
-    fromName: config.smtp_from_name || 'ContadorVirtual',
+    fromName: config.smtp_from_name || defaultFromName,
   };
 }
 
@@ -111,8 +115,11 @@ export async function sendAlertEmail(notification: AlertNotification): Promise<b
       ? `"${smtpConfig.fromName}" <${smtpConfig.fromEmail}>`
       : smtpConfig.fromEmail;
 
+    // Obtener nombre de la app
+    const appName = await getAppName();
+
     // Generar HTML del email
-    const html = generateAlertEmailHtml(notification);
+    const html = generateAlertEmailHtml(notification, appName);
 
     await transporter.sendMail({
       from: fromAddress,
@@ -132,7 +139,7 @@ export async function sendAlertEmail(notification: AlertNotification): Promise<b
 /**
  * Genera el HTML para el email de alerta
  */
-function generateAlertEmailHtml(notification: AlertNotification): string {
+function generateAlertEmailHtml(notification: AlertNotification, appName: string): string {
   const fuenteColors: Record<string, string> = {
     SEACE: '#2563eb',
     OSCE: '#7c3aed',
@@ -154,7 +161,7 @@ function generateAlertEmailHtml(notification: AlertNotification): string {
       <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <!-- Header -->
         <div style="background-color: #1e40af; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 24px;">ContadorVirtual</h1>
+          <h1 style="color: white; margin: 0; font-size: 24px;">${appName}</h1>
           <p style="color: #93c5fd; margin: 5px 0 0;">Sistema de Alertas</p>
         </div>
 
@@ -211,7 +218,7 @@ function generateAlertEmailHtml(notification: AlertNotification): string {
 
           <!-- Footer -->
           <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-            Este es un mensaje automático del sistema de alertas de ContadorVirtual.<br>
+            Este es un mensaje automático del sistema de alertas de ${appName}.<br>
             Para modificar tus preferencias de alertas, accede a tu cuenta.
           </p>
         </div>

@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { syncAllSources, getSourcesStats } from '@/lib/alert-sources';
 import { processUserAlerts } from '@/lib/notification-service';
 import { runAllScrapers } from '@/lib/scraping/orchestrator';
+import { checkPendingAlerts, notifyNewLicitaciones } from '@/lib/scraping/alert-scheduler';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutos para scrapers (requiere Vercel Pro)
@@ -56,6 +57,14 @@ export async function GET(request: NextRequest) {
         sources,
       });
 
+      // Verificar alertas basadas en fechas (licitaciones próximas a vencer)
+      console.log('[Cron] Verificando alertas por fecha de vencimiento...');
+      const alertsResult = await checkPendingAlerts();
+
+      // Notificar licitaciones nuevas
+      console.log('[Cron] Notificando licitaciones nuevas...');
+      const newLicitacionesResult = await notifyNewLicitaciones();
+
       // Registrar la ejecución
       await prisma.systemSetting.upsert({
         where: { key: 'alert_cron_last_run' },
@@ -77,6 +86,19 @@ export async function GET(request: NextRequest) {
           alertsFound: scrapingResult.totalAlertsFound,
           alertsDistributed: scrapingResult.totalAlertsDistributed,
           errors: scrapingResult.errors,
+        },
+        // Alertas basadas en fechas de vencimiento
+        scheduledAlerts: {
+          licitacionesChecked: alertsResult.checked,
+          alertsGenerated: alertsResult.alertsGenerated,
+          emailsSent: alertsResult.emailsSent,
+          errors: alertsResult.errors,
+        },
+        // Licitaciones nuevas notificadas
+        newLicitaciones: {
+          found: newLicitacionesResult.newFound,
+          notified: newLicitacionesResult.notified,
+          errors: newLicitacionesResult.errors,
         },
       });
     }
@@ -130,7 +152,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { action, sendNotifications, runScrapers } = body;
+    const { action, sendNotifications, runScrapers, checkScheduled } = body;
 
     let result: Record<string, unknown> = {};
 
@@ -143,6 +165,20 @@ export async function POST(request: NextRequest) {
         alertsFound: scrapingResult.totalAlertsFound,
         alertsDistributed: scrapingResult.totalAlertsDistributed,
         errors: scrapingResult.errors,
+      };
+    }
+
+    // Verificar y enviar alertas basadas en fechas de vencimiento
+    if (action === 'checkScheduled' || checkScheduled) {
+      const alertsResult = await checkPendingAlerts();
+      const newResult = await notifyNewLicitaciones();
+      result.scheduledAlerts = {
+        licitacionesChecked: alertsResult.checked,
+        alertsGenerated: alertsResult.alertsGenerated,
+        emailsSent: alertsResult.emailsSent,
+        newLicitaciones: newResult.newFound,
+        notified: newResult.notified,
+        errors: [...alertsResult.errors, ...newResult.errors],
       };
     }
 

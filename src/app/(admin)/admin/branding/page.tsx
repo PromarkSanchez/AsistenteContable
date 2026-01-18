@@ -30,7 +30,7 @@ interface BrandingConfig {
 
 export default function AdminBrandingPage() {
   const [config, setConfig] = useState<BrandingConfig>({
-    appName: 'Contador Virtual',
+    appName: 'Gestión Empresarial',
     appDescription: 'Sistema de Gestión Tributaria',
     logoBase64: null,
     faviconBase64: null,
@@ -275,7 +275,7 @@ export default function AdminBrandingPage() {
             </label>
             <Input
               type="text"
-              placeholder="Contador Virtual"
+              placeholder="Gestión Empresarial"
               value={config.appName}
               onChange={(e) => setConfig(prev => ({ ...prev, appName: e.target.value }))}
               maxLength={100}
@@ -305,7 +305,7 @@ export default function AdminBrandingPage() {
           <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Vista previa del título:</p>
             <p className="font-semibold text-gray-900 dark:text-white">
-              {config.appName || 'Contador Virtual'} - {config.appDescription || 'Sistema de Gestión Tributaria'}
+              {config.appName || 'Gestión Empresarial'} - {config.appDescription || 'Sistema de Gestión Tributaria'}
             </p>
           </div>
         </CardContent>
@@ -389,7 +389,7 @@ export default function AdminBrandingPage() {
                     className="w-full h-full object-contain"
                   />
                 </div>
-                <span className="font-semibold text-white">{config.appName || 'Contador Virtual'}</span>
+                <span className="font-semibold text-white">{config.appName || 'Gestión Empresarial'}</span>
               </div>
             </div>
           )}
@@ -483,7 +483,7 @@ export default function AdminBrandingPage() {
                   className="w-4 h-4 object-contain"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300 truncate max-w-[200px]">
-                  {config.appName || 'Contador Virtual'}
+                  {config.appName || 'Gestión Empresarial'}
                 </span>
               </div>
             </div>

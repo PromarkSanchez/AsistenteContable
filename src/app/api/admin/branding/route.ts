@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     if (!config) {
       // Devolver valores por defecto
       return NextResponse.json({
-        appName: 'Contador Virtual',
+        appName: 'Gestión Empresarial',
         appDescription: 'Sistema de Gestión Tributaria',
         logoBase64: null,
         faviconBase64: null,
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const configData = JSON.parse(config.value);
 
     return NextResponse.json({
-      appName: configData.appName || 'Contador Virtual',
+      appName: configData.appName || 'Gestión Empresarial',
       appDescription: configData.appDescription || 'Sistema de Gestión Tributaria',
       logoBase64: configData.logoBase64 || null,
       faviconBase64: configData.faviconBase64 || null,
@@ -128,7 +128,7 @@ export async function PUT(request: NextRequest) {
 
     // Actualizar solo los campos proporcionados
     if (appName !== undefined) {
-      configData.appName = appName.trim() || 'Contador Virtual';
+      configData.appName = appName.trim() || 'Gestión Empresarial';
     }
 
     if (appDescription !== undefined) {

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { ScraperConsole } from '@/components/admin/scraper-console';
 import {
   Bell,
   Send,
@@ -30,6 +31,7 @@ import {
   Calendar,
   Trash2,
   Globe,
+  Terminal,
 } from 'lucide-react';
 
 interface AlertStats {
@@ -91,6 +93,48 @@ interface ScraperConfig {
   lastError?: string;
 }
 
+interface LicitacionEtapa {
+  id: string;
+  nombreEtapa: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  esActual: boolean;
+}
+
+interface ScrapedLicitacion {
+  id: string;
+  nomenclatura: string;
+  objetoContratacion: string;
+  entidad: string;
+  siglaEntidad: string | null;
+  tipoSeleccion: string | null;
+  region: string | null;
+  valorReferencial: number | null;
+  fuente: string;
+  estado: string;
+  fechaConvocatoria: string | null;
+  fechaPresentacion: string | null;
+  fechaBuenaPro: string | null;
+  scrapedAt: string;
+  updatedAt: string;
+  etapas: LicitacionEtapa[];
+}
+
+interface LicitacionesResponse {
+  data: ScrapedLicitacion[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats: {
+    totalLicitaciones: number;
+    totalEtapas: number;
+    byFuente: Record<string, number>;
+  };
+}
+
 interface ScrapersStatus {
   scrapers: Record<string, ScraperConfig>;
   stats: Record<string, { total: number; today: number }>;
@@ -150,6 +194,36 @@ export default function AdminAlertasPage() {
   });
   const [runningScraper, setRunningScraper] = useState(false);
 
+  // Console state
+  const [showConsole, setShowConsole] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  // SEACE Login Config state
+  const [showSeaceModal, setShowSeaceModal] = useState(false);
+  const [seaceConfig, setSeaceConfig] = useState({
+    usuario: '',
+    clave: '',
+    entidad: 'SUPERINTENDENCIA NACIONAL DE ADUANAS Y DE ADMINISTRACION TRIBUTARIA - SUNAT',
+    siglaEntidad: 'SUNAT',
+    anio: new Date().getFullYear().toString(),
+    enabled: false,
+  });
+  const [testingSeace, setTestingSeace] = useState(false);
+  const [seaceTestResult, setSeaceTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  // Licitaciones state
+  const [licitaciones, setLicitaciones] = useState<ScrapedLicitacion[]>([]);
+  const [licitacionesStats, setLicitacionesStats] = useState<{
+    totalLicitaciones: number;
+    totalEtapas: number;
+    byFuente: Record<string, number>;
+  } | null>(null);
+  const [loadingLicitaciones, setLoadingLicitaciones] = useState(false);
+  const [expandedLicitacion, setExpandedLicitacion] = useState<string | null>(null);
+
   // Form state for creating alert
   const [formData, setFormData] = useState({
     titulo: '',
@@ -166,7 +240,75 @@ export default function AdminAlertasPage() {
     loadData();
     loadFuentesConfig();
     loadScrapersStatus();
+    loadSeaceConfig();
+    loadLicitaciones();
   }, []);
+
+  // Sincronizar el formulario del scraper cuando cambia el estado o el scraper seleccionado
+  useEffect(() => {
+    if (scrapersStatus?.scrapers[selectedScraper]) {
+      const config = scrapersStatus.scrapers[selectedScraper];
+      setScraperForm({
+        enabled: config.enabled ?? false,
+        frequency: config.frequency || 'daily',
+        retentionDays: config.retentionDays || 30,
+      });
+    }
+  }, [scrapersStatus, selectedScraper]);
+
+  const loadLicitaciones = async () => {
+    setLoadingLicitaciones(true);
+    try {
+      const data = await apiClient.get<LicitacionesResponse>('/api/admin/alertas/licitaciones');
+      setLicitaciones(data.data);
+      setLicitacionesStats(data.stats);
+    } catch (error) {
+      console.error('Error cargando licitaciones:', error);
+    } finally {
+      setLoadingLicitaciones(false);
+    }
+  };
+
+  const loadSeaceConfig = async () => {
+    try {
+      const data = await apiClient.get<{ config: typeof seaceConfig }>('/api/admin/alertas/seace-test');
+      if (data.config) {
+        setSeaceConfig(data.config);
+      }
+    } catch (error) {
+      console.error('Error cargando config SEACE:', error);
+    }
+  };
+
+  const handleSaveSeaceConfig = async () => {
+    setSavingConfig(true);
+    try {
+      await apiClient.put('/api/admin/alertas/seace-test', seaceConfig);
+      setMessage({ type: 'success', text: 'Configuración SEACE guardada' });
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error guardando configuración SEACE' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const handleTestSeace = async () => {
+    setTestingSeace(true);
+    setSeaceTestResult(null);
+    try {
+      const result = await apiClient.post<{ success: boolean; message: string }>('/api/admin/alertas/seace-test', {});
+      setSeaceTestResult(result);
+      // Recargar licitaciones después del test
+      await loadLicitaciones();
+    } catch (error) {
+      setSeaceTestResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Error ejecutando prueba',
+      });
+    } finally {
+      setTestingSeace(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -276,64 +418,115 @@ export default function AdminAlertasPage() {
 
   const handleSelectScraper = (scraper: string) => {
     setSelectedScraper(scraper);
-    if (scrapersStatus?.scrapers[scraper]) {
-      setScraperForm({
-        enabled: scrapersStatus.scrapers[scraper].enabled,
-        frequency: scrapersStatus.scrapers[scraper].frequency || 'daily',
-        retentionDays: scrapersStatus.scrapers[scraper].retentionDays || 30,
-      });
-    }
+    // El useEffect se encargará de sincronizar el formulario
+  };
+
+  // Recargar estado al abrir el modal de scrapers
+  const handleOpenScrapersModal = async () => {
+    setShowScrapersModal(true);
+    await loadScrapersStatus();
   };
 
   const handleSaveScraperConfig = async () => {
     setSavingConfig(true);
+    setMessage(null);
     try {
+      console.log('Guardando configuración:', { source: selectedScraper, ...scraperForm });
       await apiClient.put('/api/admin/alertas/scrapers', {
         source: selectedScraper,
         ...scraperForm,
       });
       await loadScrapersStatus();
-      setMessage({ type: 'success', text: `Configuración de ${selectedScraper.toUpperCase()} guardada` });
+      setMessage({ type: 'success', text: `Configuración de ${selectedScraper.toUpperCase()} guardada: enabled=${scraperForm.enabled}, frequency=${scraperForm.frequency}, retentionDays=${scraperForm.retentionDays}` });
     } catch (error) {
+      console.error('Error guardando config:', error);
       setMessage({ type: 'error', text: 'Error guardando configuración' });
     } finally {
       setSavingConfig(false);
     }
   };
 
-  const handleRunScrapers = async (sources?: string[]) => {
+  const handleRunScrapers = async (sources?: string[], showLogs = true) => {
     setRunningScraper(true);
     setMessage(null);
+
     try {
-      const result = await apiClient.post<{
-        success: boolean;
-        duration: number;
-        totalAlertsFound: number;
-        totalAlertsDistributed: number;
-        errors: string[];
-      }>('/api/admin/alertas/scrapers', {
-        sources,
-        force: true,
-        runPurge: true,
-      });
+      if (showLogs) {
+        // Modo con logs: ejecutar en background y mostrar consola inmediatamente
+        const result = await apiClient.post<{
+          success: boolean;
+          sessionId: string;
+          backgroundMode: boolean;
+          message: string;
+        }>('/api/admin/alertas/scrapers', {
+          sources,
+          force: true,
+          runPurge: true,
+          backgroundMode: true,
+        });
 
-      let msg = `Scraping completado en ${(result.duration / 1000).toFixed(1)}s. `;
-      msg += `Alertas encontradas: ${result.totalAlertsFound}, distribuidas: ${result.totalAlertsDistributed}.`;
+        // Mostrar la consola inmediatamente
+        if (result.sessionId) {
+          setCurrentSessionId(result.sessionId);
+          setShowConsole(true);
+        }
 
-      if (result.errors.length > 0) {
-        msg += ` Errores: ${result.errors.join(', ')}`;
-        setMessage({ type: 'error', text: msg });
+        // El scraper está corriendo en background, no mostramos mensaje aún
+        // El mensaje se mostrará cuando la sesión termine
       } else {
-        setMessage({ type: 'success', text: msg });
-      }
+        // Modo sin logs: esperar a que termine
+        const result = await apiClient.post<{
+          success: boolean;
+          duration: number;
+          totalAlertsFound: number;
+          totalAlertsDistributed: number;
+          errors: string[];
+          sessionId: string;
+        }>('/api/admin/alertas/scrapers', {
+          sources,
+          force: true,
+          runPurge: true,
+        });
 
-      await loadScrapersStatus();
-      await loadData();
+        let msg = `Scraping completado en ${(result.duration / 1000).toFixed(1)}s. `;
+        msg += `Alertas encontradas: ${result.totalAlertsFound}, distribuidas: ${result.totalAlertsDistributed}.`;
+
+        if (result.errors && result.errors.length > 0) {
+          msg += ` Errores: ${result.errors.join(', ')}`;
+          setMessage({ type: 'error', text: msg });
+        } else {
+          setMessage({ type: 'success', text: msg });
+        }
+
+        await loadScrapersStatus();
+        await loadData();
+        await loadLicitaciones();
+        setRunningScraper(false);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: 'Error ejecutando scrapers' });
-    } finally {
       setRunningScraper(false);
     }
+  };
+
+  const handleConsoleClose = () => {
+    setShowConsole(false);
+  };
+
+  const handleSessionEnd = async (success: boolean) => {
+    // Actualizar estado cuando termina la sesión
+    setRunningScraper(false);
+
+    if (success) {
+      setMessage({ type: 'success', text: 'Scraping completado exitosamente. Revisa la consola para más detalles.' });
+    } else {
+      setMessage({ type: 'error', text: 'Scraping completado con errores. Revisa la consola para más detalles.' });
+    }
+
+    // Recargar datos
+    await loadScrapersStatus();
+    await loadData();
+    await loadLicitaciones();
   };
 
   const handleSync = async () => {
@@ -427,7 +620,11 @@ export default function AdminAlertasPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setShowScrapersModal(true)}>
+          <Button variant="outline" onClick={() => setShowSeaceModal(true)} className="bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20">
+            <Key className="w-4 h-4 mr-2" />
+            SEACE Login
+          </Button>
+          <Button variant="outline" onClick={handleOpenScrapersModal}>
             <Globe className="w-4 h-4 mr-2" />
             Web Scrapers
           </Button>
@@ -439,6 +636,12 @@ export default function AdminAlertasPage() {
             <RefreshCw className={`w-4 h-4 mr-2 ${runningScraper ? 'animate-spin' : ''}`} />
             {runningScraper ? 'Ejecutando...' : 'Ejecutar Scrapers'}
           </Button>
+          {currentSessionId && (
+            <Button variant="outline" onClick={() => setShowConsole(true)} className="bg-gray-800 text-green-400 hover:bg-gray-700 border-gray-600">
+              <Terminal className="w-4 h-4 mr-2" />
+              Ver Logs
+            </Button>
+          )}
           <Button onClick={() => setShowCreateModal(true)}>
             <Send className="w-4 h-4 mr-2" />
             Crear Alerta Manual
@@ -617,6 +820,158 @@ export default function AdminAlertasPage() {
                       </a>
                     )}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Licitaciones Scrapeadas */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Licitaciones Extraídas de SEACE
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {licitacionesStats && (
+                <span className="text-sm text-gray-500">
+                  {licitacionesStats.totalLicitaciones} licitaciones, {licitacionesStats.totalEtapas} etapas
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={loadLicitaciones}
+                disabled={loadingLicitaciones}
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingLicitaciones ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingLicitaciones ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+            </div>
+          ) : licitaciones.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>No hay licitaciones extraídas</p>
+              <p className="text-sm mt-1">Ejecuta el scraper de SEACE para obtener datos</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              {licitaciones.map((lic) => (
+                <div
+                  key={lic.id}
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+                >
+                  {/* Header de la licitación */}
+                  <button
+                    onClick={() => setExpandedLicitacion(expandedLicitacion === lic.id ? null : lic.id)}
+                    className="w-full p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs font-medium">
+                            {lic.fuente}
+                          </span>
+                          {lic.siglaEntidad && (
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded text-xs">
+                              {lic.siglaEntidad}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            lic.estado === 'ACTIVO'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                          }`}>
+                            {lic.estado}
+                          </span>
+                          {lic.etapas.length > 0 && (
+                            <span className="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded text-xs">
+                              {lic.etapas.length} etapas
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {lic.nomenclatura}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                          {lic.objetoContratacion || 'Sin descripción'}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Building2 className="w-3 h-3" />
+                            {lic.entidad?.substring(0, 50) || 'Sin entidad'}
+                          </span>
+                          {lic.tipoSeleccion && (
+                            <span>{lic.tipoSeleccion}</span>
+                          )}
+                          <span>
+                            Actualizado: {new Date(lic.updatedAt).toLocaleDateString('es-PE')}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-gray-400">
+                        {expandedLicitacion === lic.id ? '▲' : '▼'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Detalle expandido con cronograma */}
+                  {expandedLicitacion === lic.id && lic.etapas.length > 0 && (
+                    <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+                      <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Cronograma
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                              <th className="pb-2 font-medium">Etapa</th>
+                              <th className="pb-2 font-medium">Fecha Inicio</th>
+                              <th className="pb-2 font-medium">Fecha Fin</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lic.etapas.map((etapa) => {
+                              const formatFecha = (fecha: string | null) => {
+                                if (!fecha) return '-';
+                                const d = new Date(fecha);
+                                const tieneHora = d.getHours() !== 0 || d.getMinutes() !== 0;
+                                return d.toLocaleString('es-PE', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  ...(tieneHora && { hour: '2-digit', minute: '2-digit' })
+                                });
+                              };
+                              return (
+                                <tr key={etapa.id} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                                  <td className="py-2 text-gray-700 dark:text-gray-300">
+                                    {etapa.nombreEtapa}
+                                  </td>
+                                  <td className="py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                    {formatFecha(etapa.fechaInicio)}
+                                  </td>
+                                  <td className="py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                    {formatFecha(etapa.fechaFin)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1034,11 +1389,15 @@ export default function AdminAlertasPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleRunScrapers([selectedScraper])}
+                      onClick={() => {
+                        setShowScrapersModal(false);
+                        handleRunScrapers([selectedScraper], true);
+                      }}
                       disabled={runningScraper}
+                      className="bg-gray-800 text-green-400 hover:bg-gray-700 border-gray-600"
                     >
-                      <Play className="w-4 h-4 mr-1" />
-                      Ejecutar ahora
+                      <Terminal className="w-4 h-4 mr-1" />
+                      Ejecutar con Logs
                     </Button>
                   </CardTitle>
                 </CardHeader>
@@ -1122,6 +1481,172 @@ export default function AdminAlertasPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de Configuración SEACE Login */}
+      {showSeaceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-blue-500" />
+                  Configuración SEACE con Login
+                </h2>
+                <button
+                  onClick={() => setShowSeaceModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Aviso */}
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  <strong>Importante:</strong> Esta configuración permite acceder al portal SEACE con credenciales para obtener información detallada de licitaciones (cronogramas, fichas, etc).
+                </p>
+              </div>
+
+              {/* Formulario de credenciales */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Usuario SEACE
+                    </label>
+                    <Input
+                      value={seaceConfig.usuario}
+                      onChange={(e) => setSeaceConfig({ ...seaceConfig, usuario: e.target.value })}
+                      placeholder="Ingrese usuario"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Clave SEACE
+                    </label>
+                    <Input
+                      type="password"
+                      value={seaceConfig.clave}
+                      onChange={(e) => setSeaceConfig({ ...seaceConfig, clave: e.target.value })}
+                      placeholder="Ingrese clave"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Entidad a buscar
+                  </label>
+                  <Input
+                    value={seaceConfig.entidad}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, entidad: e.target.value })}
+                    placeholder="Nombre completo de la entidad"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Sigla de la entidad
+                    </label>
+                    <Input
+                      value={seaceConfig.siglaEntidad}
+                      onChange={(e) => setSeaceConfig({ ...seaceConfig, siglaEntidad: e.target.value })}
+                      placeholder="Ej: SUNAT"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Año de búsqueda
+                    </label>
+                    <Input
+                      value={seaceConfig.anio}
+                      onChange={(e) => setSeaceConfig({ ...seaceConfig, anio: e.target.value })}
+                      placeholder="2025"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="seaceEnabled"
+                    checked={seaceConfig.enabled}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, enabled: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                  <label htmlFor="seaceEnabled" className="text-sm text-gray-700 dark:text-gray-300">
+                    Habilitar scraping automático con login
+                  </label>
+                </div>
+              </div>
+
+              {/* Resultado del test */}
+              {seaceTestResult && (
+                <div className={`mt-4 p-4 rounded-lg ${
+                  seaceTestResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {seaceTestResult.success ? (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-red-500" />
+                    )}
+                    <span className={`font-medium ${
+                      seaceTestResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'
+                    }`}>
+                      {seaceTestResult.message}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Botones */}
+              <div className="flex justify-between mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <Button
+                  variant="outline"
+                  onClick={handleTestSeace}
+                  disabled={testingSeace || !seaceConfig.usuario || !seaceConfig.clave}
+                >
+                  {testingSeace ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Probando...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Probar Conexión
+                    </>
+                  )}
+                </Button>
+
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setShowSeaceModal(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleSaveSeaceConfig}
+                    disabled={savingConfig}
+                  >
+                    {savingConfig ? 'Guardando...' : 'Guardar Configuración'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scraper Console */}
+      <ScraperConsole
+        sessionId={currentSessionId}
+        isOpen={showConsole}
+        onClose={handleConsoleClose}
+        onSessionEnd={handleSessionEnd}
+      />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { Providers } from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Contador Virtual - Sistema de Gestión Tributaria',
+  title: 'Gestión Empresarial - Sistema de Gestión Tributaria',
   description: 'Sistema de contabilidad y gestión tributaria para contribuyentes peruanos. Facturación electrónica, declaraciones PDT 621, y más.',
   keywords: ['contabilidad', 'tributaria', 'SUNAT', 'facturación electrónica', 'PDT 621', 'Perú'],
 };

@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
       emailEnabled,
       emailDestino,
       frecuencia,
+      diasAnticipacion,
     } = body;
 
     // Validar tipo
@@ -158,6 +159,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Normalizar diasAnticipacion a array
+    let diasArray: number[] = [3]; // Default
+    if (Array.isArray(diasAnticipacion)) {
+      diasArray = diasAnticipacion.map((d: number | string) => parseInt(String(d))).filter((d: number) => !isNaN(d) && d >= 0 && d <= 14);
+    } else if (diasAnticipacion !== undefined && diasAnticipacion !== null) {
+      const dia = parseInt(String(diasAnticipacion));
+      if (!isNaN(dia) && dia >= 0 && dia <= 14) {
+        diasArray = [dia];
+      }
+    }
+    // Limitar a máximo 4 días seleccionados
+    diasArray = diasArray.slice(0, 4).sort((a, b) => b - a);
+
     const alertConfig = await prisma.alertConfig.create({
       data: {
         userId,
@@ -173,6 +187,7 @@ export async function POST(request: NextRequest) {
         emailEnabled: emailEnabled !== false,
         emailDestino: emailDestino || null,
         frecuencia: frecuencia || 'diaria',
+        diasAnticipacion: diasArray,
         isActive: true,
       },
     });
@@ -234,6 +249,19 @@ export async function PUT(request: NextRequest) {
     if (updateData.emailEnabled !== undefined) data.emailEnabled = updateData.emailEnabled;
     if (updateData.emailDestino !== undefined) data.emailDestino = updateData.emailDestino || null;
     if (updateData.frecuencia !== undefined) data.frecuencia = updateData.frecuencia;
+    if (updateData.diasAnticipacion !== undefined) {
+      // Normalizar diasAnticipacion a array
+      let diasArray: number[] = [];
+      if (Array.isArray(updateData.diasAnticipacion)) {
+        diasArray = updateData.diasAnticipacion.map((d: number | string) => parseInt(String(d))).filter((d: number) => !isNaN(d) && d >= 0 && d <= 14);
+      } else {
+        const dia = parseInt(String(updateData.diasAnticipacion));
+        if (!isNaN(dia) && dia >= 0 && dia <= 14) {
+          diasArray = [dia];
+        }
+      }
+      data.diasAnticipacion = diasArray.slice(0, 4).sort((a, b) => b - a);
+    }
     if (updateData.isActive !== undefined) data.isActive = updateData.isActive;
 
     const updated = await prisma.alertConfig.update({

@@ -22,6 +22,7 @@ export interface ScraperResult {
   alertsDistributed: number;
   error?: string;
   duration: number;
+  metadata?: Record<string, unknown>;
 }
 
 /**

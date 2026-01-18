@@ -542,6 +542,9 @@ model AlertConfig {
   pushEnabled     Boolean  @default(false) @map("push_enabled")
   frecuencia      String   @default("diaria") @db.VarChar(20) // "inmediata", "diaria", "semanal"
 
+  // Días de anticipación para alertas de vencimiento (array: ej [5, 3, 1, 0] = avisar 5, 3, 1 días antes y el mismo día)
+  diasAnticipacion Int[]   @default([3]) @map("dias_anticipacion")
+
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -576,6 +579,91 @@ model AlertHistory {
   @@index([alertConfigId])
   @@index([isRead])
   @@map("alert_history")
+}
+
+// ==================== LICITACIONES SCRAPEADAS ====================
+
+model ScrapedLicitacion {
+  id              String   @id @default(uuid()) @db.Uuid
+
+  // Identificación única del procedimiento
+  nomenclatura    String   @unique @db.VarChar(100) // ej: "LP-SM-1-2025-SUNAT-1"
+
+  // Datos del procedimiento
+  objetoContratacion String @map("objeto_contratacion") @db.Text
+  entidad         String   @db.VarChar(255)
+  siglaEntidad    String?  @map("sigla_entidad") @db.VarChar(50)
+  tipoSeleccion   String?  @map("tipo_seleccion") @db.VarChar(100)
+  region          String?  @db.VarChar(50)
+
+  // Montos
+  valorReferencial Decimal? @map("valor_referencial") @db.Decimal(14, 2)
+  moneda          String   @default("PEN") @db.VarChar(3)
+
+  // Fuente
+  fuente          String   @db.VarChar(50) // "SEACE", "OSCE"
+  urlOrigen       String?  @map("url_origen") @db.Text
+
+  // Estado
+  estado          String   @default("ACTIVO") @db.VarChar(20) // ACTIVO, CERRADO, CANCELADO
+
+  // Fechas importantes (extraídas del cronograma para búsqueda rápida)
+  fechaConvocatoria    DateTime? @map("fecha_convocatoria") @db.Date
+  fechaPresentacion    DateTime? @map("fecha_presentacion") @db.Date // Fecha límite de presentación
+  fechaBuenaPro        DateTime? @map("fecha_buena_pro") @db.Date
+
+  // Tracking
+  scrapedAt       DateTime @default(now()) @map("scraped_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relación con etapas del cronograma
+  etapas          LicitacionEtapa[]
+
+  // Relación con notificaciones enviadas
+  notificaciones  LicitacionNotificacion[]
+
+  @@index([entidad])
+  @@index([region])
+  @@index([fechaPresentacion])
+  @@index([estado])
+  @@map("scraped_licitaciones")
+}
+
+model LicitacionEtapa {
+  id              String   @id @default(uuid()) @db.Uuid
+  licitacionId    String   @map("licitacion_id") @db.Uuid
+
+  nombreEtapa     String   @map("nombre_etapa") @db.VarChar(100) // "Convocatoria", "Presentación de Propuestas", etc.
+  fechaInicio     DateTime? @map("fecha_inicio") @db.Date
+  fechaFin        DateTime? @map("fecha_fin") @db.Date
+
+  // Estado de la etapa
+  esActual        Boolean  @default(false) @map("es_actual") // Si es la etapa vigente
+
+  licitacion      ScrapedLicitacion @relation(fields: [licitacionId], references: [id], onDelete: Cascade)
+
+  @@index([licitacionId])
+  @@index([fechaFin])
+  @@map("licitacion_etapas")
+}
+
+model LicitacionNotificacion {
+  id              String   @id @default(uuid()) @db.Uuid
+  licitacionId    String   @map("licitacion_id") @db.Uuid
+  alertConfigId   String   @map("alert_config_id") @db.Uuid
+
+  // Tipo de notificación enviada
+  tipoNotificacion String  @map("tipo_notificacion") @db.VarChar(50) // "nueva", "vencimiento_proximo", "cambio_estado"
+  etapaNotificada  String? @map("etapa_notificada") @db.VarChar(100) // Nombre de la etapa que generó la notificación
+
+  // Tracking
+  notifiedAt      DateTime @default(now()) @map("notified_at") @db.Timestamptz
+
+  licitacion      ScrapedLicitacion @relation(fields: [licitacionId], references: [id], onDelete: Cascade)
+
+  @@unique([licitacionId, alertConfigId, tipoNotificacion, etapaNotificada])
+  @@index([alertConfigId])
+  @@map("licitacion_notificaciones")
 }
 
 // ==================== MÉTRICAS Y SEGURIDAD ====================

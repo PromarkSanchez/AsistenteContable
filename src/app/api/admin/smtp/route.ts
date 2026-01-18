@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { encrypt, decrypt } from '@/lib/encryption';
+import { getAppName } from '@/lib/branding';
 
 export const dynamic = 'force-dynamic';
 
@@ -289,6 +290,7 @@ export async function POST(request: NextRequest) {
 
     // Enviar email de prueba si se proporciona
     if (testEmail) {
+      const appName = await getAppName();
       const fromAddress = config.smtp_from_name
         ? `"${config.smtp_from_name}" <${config.smtp_from_email}>`
         : config.smtp_from_email;
@@ -301,11 +303,11 @@ export async function POST(request: NextRequest) {
       const info = await transporter.sendMail({
         from: fromAddress,
         to: testEmail,
-        subject: 'Prueba de configuración SMTP - ContadorVirtual',
+        subject: `Prueba de configuración SMTP - ${appName}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">¡Configuración exitosa!</h2>
-            <p>Este es un correo de prueba enviado desde ContadorVirtual.</p>
+            <p>Este es un correo de prueba enviado desde ${appName}.</p>
             <p>Si recibes este mensaje, la configuración SMTP está funcionando correctamente.</p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
             <p style="color: #6b7280; font-size: 12px;">

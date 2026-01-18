@@ -4,7 +4,13 @@ import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
 
 // Rutas públicas
 const publicPaths = ['/login', '/register'];
-const publicApiPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/branding'];
+const publicApiPaths = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/refresh',
+  '/api/branding',
+  '/api/admin/alertas/scraper-logs', // El sessionId actúa como token de acceso
+];
 
 // Helper para eliminar cookie y redirigir a login
 function redirectToLoginWithClearCookie(request: NextRequest) {

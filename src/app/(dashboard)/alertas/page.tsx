@@ -25,6 +25,8 @@ import {
   X,
   Crown,
   Lock,
+  Send,
+  PlayCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -41,8 +43,26 @@ interface AlertConfig {
   emailEnabled: boolean;
   emailDestino: string | null;
   frecuencia: string;
+  diasAnticipacion: number[]; // Array de días: [7, 3, 1, 0] = avisar 7, 3, 1 días antes y el mismo día
   isActive: boolean;
   createdAt: string;
+}
+
+interface LicitacionEtapa {
+  id: string;
+  nombreEtapa: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+}
+
+interface Licitacion {
+  id: string;
+  nomenclatura: string;
+  objetoContratacion: string;
+  entidad: string;
+  siglaEntidad: string | null;
+  estado: string;
+  etapas: LicitacionEtapa[];
 }
 
 interface AlertHistory {
@@ -92,6 +112,12 @@ export default function AlertasPage() {
   const [saving, setSaving] = useState(false);
   const [requiresUpgrade, setRequiresUpgrade] = useState(false);
   const [requiredPlans, setRequiredPlans] = useState<string[]>([]);
+  const [licitaciones, setLicitaciones] = useState<Licitacion[]>([]);
+  const [loadingLicitaciones, setLoadingLicitaciones] = useState(false);
+  const [showLicitaciones, setShowLicitaciones] = useState(false);
+  const [selectedLicitacion, setSelectedLicitacion] = useState<Licitacion | null>(null);
+  const [testingConfigId, setTestingConfigId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; details?: unknown } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -100,16 +126,31 @@ export default function AlertasPage() {
     descripcion: '',
     palabrasClave: '',
     regiones: [] as string[],
+    entidades: '',
     montoMinimo: '',
     montoMaximo: '',
     emailEnabled: true,
     emailDestino: '',
     frecuencia: 'diaria',
+    diasAnticipacion: [3] as number[], // Array de días de anticipación
   });
 
   useEffect(() => {
     loadData();
+    loadLicitaciones();
   }, []);
+
+  const loadLicitaciones = async () => {
+    setLoadingLicitaciones(true);
+    try {
+      const data = await apiClient.get<{ data: Licitacion[] }>('/api/alertas/licitaciones');
+      setLicitaciones(data.data || []);
+    } catch (error) {
+      console.error('Error cargando licitaciones:', error);
+    } finally {
+      setLoadingLicitaciones(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -147,9 +188,11 @@ export default function AlertasPage() {
       const payload = {
         ...formData,
         palabrasClave: formData.palabrasClave.split(',').map(p => p.trim()).filter(Boolean),
+        entidades: formData.entidades.split(',').map(p => p.trim()).filter(Boolean),
         montoMinimo: formData.montoMinimo || null,
         montoMaximo: formData.montoMaximo || null,
         emailDestino: formData.emailDestino || null,
+        diasAnticipacion: formData.diasAnticipacion,
       };
 
       if (editingConfig) {
@@ -202,34 +245,98 @@ export default function AlertasPage() {
 
   const handleEdit = (config: AlertConfig) => {
     setEditingConfig(config);
+    setSelectedLicitacion(null);
     setFormData({
       tipo: config.tipo,
       nombre: config.nombre,
       descripcion: config.descripcion || '',
       palabrasClave: config.palabrasClave.join(', '),
       regiones: config.regiones,
+      entidades: config.entidades?.join(', ') || '',
       montoMinimo: config.montoMinimo?.toString() || '',
       montoMaximo: config.montoMaximo?.toString() || '',
       emailEnabled: config.emailEnabled,
       emailDestino: config.emailDestino || '',
       frecuencia: config.frecuencia,
+      diasAnticipacion: Array.isArray(config.diasAnticipacion) ? config.diasAnticipacion : [config.diasAnticipacion || 3],
+    });
+    setShowModal(true);
+  };
+
+  // Función para configurar alerta desde una licitación
+  const handleConfigureFromLicitacion = (lic: Licitacion) => {
+    setSelectedLicitacion(lic);
+    setEditingConfig(null);
+    setFormData({
+      tipo: 'licitacion',
+      nombre: `Alerta: ${lic.nomenclatura}`,
+      descripcion: lic.objetoContratacion?.substring(0, 200) || '',
+      palabrasClave: '',
+      regiones: [],
+      entidades: lic.siglaEntidad || lic.entidad.substring(0, 50),
+      montoMinimo: '',
+      montoMaximo: '',
+      emailEnabled: true,
+      emailDestino: '',
+      frecuencia: 'diaria',
+      diasAnticipacion: [3, 1, 0], // Por defecto: 3 días, 1 día y mismo día
     });
     setShowModal(true);
   };
 
   const resetForm = () => {
+    setSelectedLicitacion(null);
     setFormData({
       tipo: 'licitacion',
       nombre: '',
       descripcion: '',
       palabrasClave: '',
       regiones: [],
+      entidades: '',
       montoMinimo: '',
       montoMaximo: '',
       emailEnabled: true,
       emailDestino: '',
       frecuencia: 'diaria',
+      diasAnticipacion: [3],
     });
+  };
+
+  // Toggle día de anticipación
+  const toggleDiaAnticipacion = (dia: number) => {
+    const current = formData.diasAnticipacion;
+    if (current.includes(dia)) {
+      // Quitar (pero mantener al menos uno)
+      if (current.length > 1) {
+        setFormData({ ...formData, diasAnticipacion: current.filter(d => d !== dia) });
+      }
+    } else {
+      // Agregar (máximo 4)
+      if (current.length < 4) {
+        setFormData({ ...formData, diasAnticipacion: [...current, dia].sort((a, b) => b - a) });
+      }
+    }
+  };
+
+  // Probar envío de alerta
+  const handleTestAlert = async (configId: string, sendEmail = false) => {
+    setTestingConfigId(configId);
+    setTestResult(null);
+    try {
+      const result = await apiClient.post<{ success: boolean; message: string; details?: unknown }>('/api/alertas/test', {
+        alertConfigId: configId,
+        sendTestEmail: sendEmail,
+      });
+      setTestResult(result);
+      if (sendEmail && result.details && (result.details as { emailSent?: boolean }).emailSent) {
+        alert('Email de prueba enviado correctamente');
+      }
+    } catch (error) {
+      console.error('Error probando alerta:', error);
+      setTestResult({ success: false, message: 'Error al probar la alerta' });
+    } finally {
+      setTestingConfigId(null);
+    }
   };
 
   if (loading) {
@@ -423,10 +530,38 @@ export default function AlertasPage() {
                                   Email {config.frecuencia}
                                 </span>
                               )}
+                              {config.diasAnticipacion && config.diasAnticipacion.length > 0 && (
+                                <span className="inline-flex items-center gap-1 text-xs text-yellow-600">
+                                  <Clock className="w-3 h-3" />
+                                  {(Array.isArray(config.diasAnticipacion) ? config.diasAnticipacion : [config.diasAnticipacion])
+                                    .map(d => d === 0 ? 'mismo día' : `${d}d`)
+                                    .join(', ')}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleTestAlert(config.id, false)}
+                            disabled={testingConfigId === config.id}
+                            className="p-2 text-gray-400 hover:text-blue-600 disabled:opacity-50"
+                            title="Verificar alerta"
+                          >
+                            {testingConfigId === config.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <PlayCircle className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleTestAlert(config.id, true)}
+                            disabled={testingConfigId === config.id}
+                            className="p-2 text-gray-400 hover:text-green-600 disabled:opacity-50"
+                            title="Enviar email de prueba"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => handleToggleActive(config)}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -544,6 +679,143 @@ export default function AlertasPage() {
         </Card>
       </div>
 
+      {/* Licitaciones Disponibles */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" />
+              Licitaciones Disponibles
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowLicitaciones(!showLicitaciones)}
+            >
+              {showLicitaciones ? 'Ocultar' : 'Ver licitaciones'}
+            </Button>
+          </div>
+        </CardHeader>
+        {showLicitaciones && (
+          <CardContent>
+            {loadingLicitaciones ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+              </div>
+            ) : licitaciones.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No hay licitaciones disponibles</p>
+                <p className="text-sm mt-1">Las licitaciones se actualizan automáticamente cada día</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {licitaciones.map((lic) => (
+                  <div
+                    key={lic.id}
+                    className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs font-medium">
+                            SEACE
+                          </span>
+                          {lic.siglaEntidad && (
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded text-xs">
+                              {lic.siglaEntidad}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            lic.estado === 'ACTIVO'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                          }`}>
+                            {lic.estado}
+                          </span>
+                        </div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">
+                          {lic.nomenclatura}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                          {lic.objetoContratacion || 'Sin descripción'}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {lic.entidad}
+                        </p>
+                        {/* Cronograma */}
+                        {lic.etapas.length > 0 && (
+                          <div className="mt-3 p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                            <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+                              Cronograma ({lic.etapas.length} etapas):
+                            </p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                                    <th className="text-left py-1 pr-2">Etapa</th>
+                                    <th className="text-right py-1 px-1 whitespace-nowrap">Fecha Inicio</th>
+                                    <th className="text-right py-1 pl-1 whitespace-nowrap">Fecha Fin</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {lic.etapas.map((etapa) => (
+                                    <tr key={etapa.id} className="border-b border-gray-100 dark:border-gray-700/50 last:border-0">
+                                      <td className="py-1 pr-2 text-gray-700 dark:text-gray-300">{etapa.nombreEtapa}</td>
+                                      <td className="py-1 px-1 text-right text-gray-500 whitespace-nowrap">
+                                        {etapa.fechaInicio
+                                          ? new Date(etapa.fechaInicio).toLocaleString('es-PE', {
+                                              day: '2-digit',
+                                              month: '2-digit',
+                                              year: 'numeric',
+                                              ...(new Date(etapa.fechaInicio).getHours() !== 0 && {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                              })
+                                            })
+                                          : '-'}
+                                      </td>
+                                      <td className="py-1 pl-1 text-right text-gray-500 whitespace-nowrap">
+                                        {etapa.fechaFin
+                                          ? new Date(etapa.fechaFin).toLocaleString('es-PE', {
+                                              day: '2-digit',
+                                              month: '2-digit',
+                                              year: 'numeric',
+                                              ...(new Date(etapa.fechaFin).getHours() !== 0 && {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                              })
+                                            })
+                                          : '-'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                        {/* Botón para configurar alerta */}
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <Button
+                            size="sm"
+                            onClick={() => handleConfigureFromLicitacion(lic)}
+                            className="w-full"
+                          >
+                            <Bell className="w-4 h-4 mr-2" />
+                            Configurar Alerta para esta Licitación
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
       {/* Modal para crear/editar alerta */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -648,6 +920,17 @@ export default function AlertasPage() {
                   </p>
                 </div>
 
+                {/* Entidades (para licitaciones) */}
+                {formData.tipo === 'licitacion' && (
+                  <Input
+                    label="Entidades"
+                    placeholder="Ej: SUNAT, OSCE, MEF (separadas por coma)"
+                    value={formData.entidades}
+                    onChange={(e) => setFormData({ ...formData, entidades: e.target.value })}
+                    helperText="Solo recibirás alertas de estas entidades (vacío = todas)"
+                  />
+                )}
+
                 {/* Rango de montos */}
                 {(formData.tipo === 'licitacion') && (
                   <div className="grid grid-cols-2 gap-4">
@@ -665,6 +948,48 @@ export default function AlertasPage() {
                       value={formData.montoMaximo}
                       onChange={(e) => setFormData({ ...formData, montoMaximo: e.target.value })}
                     />
+                  </div>
+                )}
+
+                {/* Días de anticipación (para licitaciones) */}
+                {formData.tipo === 'licitacion' && (
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <Clock className="w-4 h-4 inline mr-2" />
+                      ¿Qué días antes quieres recibir alertas? (máximo 4)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[14, 7, 5, 3, 2, 1, 0].map((dias) => {
+                        const isSelected = formData.diasAnticipacion.includes(dias);
+                        const canSelect = isSelected || formData.diasAnticipacion.length < 4;
+                        return (
+                          <button
+                            key={dias}
+                            type="button"
+                            onClick={() => toggleDiaAnticipacion(dias)}
+                            disabled={!canSelect && !isSelected}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isSelected
+                                ? 'bg-yellow-500 text-white'
+                                : canSelect
+                                  ? 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 border border-gray-200 dark:border-gray-700 cursor-not-allowed'
+                            }`}
+                          >
+                            {dias === 0 ? 'Mismo día' : dias === 1 ? '1 día' : `${dias} días`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {formData.diasAnticipacion.length === 0
+                        ? 'Selecciona al menos un día'
+                        : `Recibirás alertas: ${formData.diasAnticipacion
+                            .sort((a, b) => b - a)
+                            .map(d => d === 0 ? 'el mismo día' : d === 1 ? '1 día antes' : `${d} días antes`)
+                            .join(', ')}`
+                      }
+                    </p>
                   </div>
                 )}
 

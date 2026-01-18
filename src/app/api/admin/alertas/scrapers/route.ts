@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { sources, force = true, runPurge = false } = body;
+    const { sources, force = true, runPurge = false, backgroundMode = false } = body;
 
     // Validar fuentes si se especifican
     if (sources && Array.isArray(sources)) {
@@ -146,16 +146,59 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Ejecutar scrapers
+    // Si es modo background, crear la sesión primero y ejecutar en segundo plano
+    if (backgroundMode) {
+      const { scraperLogger, getAllActiveSessions } = await import('@/lib/scraping/scraper-logger');
+      const sessionId = scraperLogger.startSession('Orchestrator');
+
+      console.log(`[scrapers] Sesión creada: ${sessionId}`);
+      console.log(`[scrapers] Sesiones activas después de crear:`, getAllActiveSessions().map(s => s.id));
+
+      // Ejecutar en segundo plano (no esperamos)
+      runAllScrapersWithSession(sessionId, {
+        force,
+        runPurge,
+        sources: sources?.map((s: string) => s.toLowerCase() as 'seace' | 'osce' | 'sunat'),
+      }).catch(err => {
+        console.error('Error en scraper background:', err);
+      });
+
+      // Retornar inmediatamente con el sessionId
+      return NextResponse.json({
+        success: true,
+        sessionId,
+        backgroundMode: true,
+        message: 'Scraper iniciado en segundo plano',
+      });
+    }
+
+    // Modo normal: esperar a que termine
     const result = await runAllScrapers({
       force,
       runPurge,
       sources: sources?.map((s: string) => s.toLowerCase() as 'seace' | 'osce' | 'sunat'),
     });
 
-    return NextResponse.json(result);
+    // El sessionId viene incluido en el result del orchestrator
+    return NextResponse.json({
+      ...result,
+      sessionId: result.sessionId,
+    });
   } catch (error) {
     console.error('Error ejecutando scrapers:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
+}
+
+// Función auxiliar para ejecutar scrapers con una sesión existente
+async function runAllScrapersWithSession(
+  sessionId: string,
+  options: {
+    force?: boolean;
+    runPurge?: boolean;
+    sources?: ('seace' | 'osce' | 'sunat')[];
+  }
+) {
+  const { runAllScrapersWithExistingSession } = await import('@/lib/scraping/orchestrator');
+  return runAllScrapersWithExistingSession(sessionId, options);
 }

@@ -10,7 +10,7 @@ export async function GET() {
 
     if (!config) {
       return NextResponse.json({
-        appName: 'Contador Virtual',
+        appName: 'Gestión Empresarial',
         appDescription: 'Sistema de Gestión Tributaria',
         logoBase64: null,
         faviconBase64: null,
@@ -20,7 +20,7 @@ export async function GET() {
     const configData = JSON.parse(config.value);
 
     return NextResponse.json({
-      appName: configData.appName || 'Contador Virtual',
+      appName: configData.appName || 'Gestión Empresarial',
       appDescription: configData.appDescription || 'Sistema de Gestión Tributaria',
       logoBase64: configData.logoBase64 || null,
       faviconBase64: configData.faviconBase64 || null,
@@ -29,7 +29,7 @@ export async function GET() {
     console.error('Error obteniendo configuración de branding:', error);
     // En caso de error, devolver valores por defecto
     return NextResponse.json({
-      appName: 'Contador Virtual',
+      appName: 'Gestión Empresarial',
       appDescription: 'Sistema de Gestión Tributaria',
       logoBase64: null,
       faviconBase64: null,
