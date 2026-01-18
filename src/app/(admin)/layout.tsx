@@ -14,6 +14,11 @@ import {
   ArrowLeft,
   LayoutDashboard,
   Palette,
+  LogOut,
+  Settings2,
+  Bell,
+  Mail,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
@@ -22,8 +27,12 @@ const adminMenuItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/users', label: 'Usuarios', icon: Users },
   { href: '/admin/companies', label: 'Empresas', icon: Building2 },
+  { href: '/admin/plans', label: 'Planes', icon: Settings2 },
   { href: '/admin/branding', label: 'Personalización', icon: Palette },
   { href: '/admin/ai-config', label: 'Configuración IA', icon: Bot },
+  { href: '/admin/smtp', label: 'Correo SMTP', icon: Mail },
+  { href: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
+  { href: '/admin/alertas', label: 'Alertas', icon: Bell },
 ];
 
 export default function AdminLayout({
@@ -33,8 +42,17 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, isLoading } = useAuthStore();
+  const { user, isAuthenticated, isLoading, logout } = useAuthStore();
   const { appName, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
+
+  const handleLogout = () => {
+    // Eliminar cookie
+    document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
+    // Limpiar localStorage
+    localStorage.removeItem('contador-auth');
+    logout();
+    window.location.href = '/login';
+  };
 
   useEffect(() => {
     if (!brandingLoaded) {
@@ -75,14 +93,25 @@ export default function AdminLayout({
               <span className="font-semibold text-lg">Panel de Administración</span>
             </div>
             <div className="flex items-center gap-4">
+              <span className="text-sm text-red-100 hidden sm:block">
+                {user?.email}
+              </span>
               <ThemeToggle />
               <Link
                 href="/"
                 className="flex items-center gap-2 text-sm hover:text-red-200 transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Volver al Dashboard
+                <span className="hidden sm:inline">Volver al Dashboard</span>
               </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-sm hover:text-red-200 transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Salir</span>
+              </button>
             </div>
           </div>
         </div>

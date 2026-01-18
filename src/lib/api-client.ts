@@ -30,14 +30,30 @@ class ApiClient {
     return headers;
   }
 
+  // Forzar logout y redirección al login
+  private forceLogout(): void {
+    // Limpiar store
+    useAuthStore.getState().logout();
+    // Limpiar cookie
+    document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
+    // Limpiar localStorage/sessionStorage
+    localStorage.removeItem('contador-auth');
+    sessionStorage.removeItem('contador-auth');
+    sessionStorage.removeItem('contador-company');
+    localStorage.removeItem('plan-config-storage');
+    // Redirigir al login
+    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+      window.location.href = '/login';
+    }
+  }
+
   private async handleResponse<T>(response: Response): Promise<T> {
     if (response.status === 401) {
       // Token expirado, intentar refresh
       const refreshed = await this.refreshToken();
       if (!refreshed) {
         // Logout si no se puede refrescar
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
+        this.forceLogout();
         throw new Error('Sesión expirada');
       }
       throw new Error('Token refrescado, reintentar');

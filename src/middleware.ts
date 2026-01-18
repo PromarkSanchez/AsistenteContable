@@ -6,6 +6,20 @@ import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
 const publicPaths = ['/login', '/register'];
 const publicApiPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/branding'];
 
+// Helper para eliminar cookie y redirigir a login
+function redirectToLoginWithClearCookie(request: NextRequest) {
+  const response = NextResponse.redirect(new URL('/login', request.url));
+  // Eliminar la cookie expirada/inválida
+  response.cookies.set('contador-auth', '', {
+    path: '/',
+    expires: new Date(0),
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -17,8 +31,20 @@ export async function middleware(request: NextRequest) {
     // Si el usuario ya está autenticado, redirigir al dashboard
     const sessionCookie = request.cookies.get('contador-auth');
     if (sessionCookie?.value) {
-      console.log('Middleware - Usuario autenticado intentando acceder a ruta pública, redirigiendo a dashboard');
-      return NextResponse.redirect(new URL('/', request.url));
+      // Verificar que el token sea válido antes de redirigir
+      const payload = await verifyAccessToken(sessionCookie.value);
+      if (payload) {
+        console.log('Middleware - Usuario autenticado intentando acceder a ruta pública, redirigiendo a dashboard');
+        return NextResponse.redirect(new URL('/', request.url));
+      }
+      // Token inválido, permitir acceso a login y limpiar cookie
+      console.log('Middleware - Token inválido, limpiando cookie');
+      const response = NextResponse.next();
+      response.cookies.set('contador-auth', '', {
+        path: '/',
+        expires: new Date(0),
+      });
+      return response;
     }
     console.log('Middleware - Ruta pública, permitiendo');
     return NextResponse.next();
@@ -40,7 +66,7 @@ export async function middleware(request: NextRequest) {
 
     const payload = await verifyAccessToken(token);
     if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
+      return NextResponse.json({ error: 'Token inválido o expirado' }, { status: 401 });
     }
 
     const requestHeaders = new Headers(request.headers);
@@ -52,16 +78,23 @@ export async function middleware(request: NextRequest) {
     });
   }
 
-  // Para páginas protegidas (dashboard)
+  // Para páginas protegidas (dashboard, admin, etc.)
   const sessionCookie = request.cookies.get('contador-auth');
   console.log('Middleware - Cookie:', sessionCookie?.value ? 'EXISTE' : 'NO EXISTE');
 
   if (!sessionCookie?.value) {
-    console.log('Middleware - Redirigiendo a login');
+    console.log('Middleware - No hay cookie, redirigiendo a login');
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  console.log('Middleware - Cookie válida, permitiendo acceso');
+  // Verificar que el token de la cookie sea válido
+  const payload = await verifyAccessToken(sessionCookie.value);
+  if (!payload) {
+    console.log('Middleware - Token expirado o inválido, redirigiendo a login');
+    return redirectToLoginWithClearCookie(request);
+  }
+
+  console.log('Middleware - Token válido, permitiendo acceso');
   return NextResponse.next();
 }
 

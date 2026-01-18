@@ -50,6 +50,7 @@ enum SettingCategory {
   SUNAT
   EMAIL
   GENERAL
+  ALERTS
 }
 
 enum UploadStatus {
@@ -575,6 +576,159 @@ model AlertHistory {
   @@index([alertConfigId])
   @@index([isRead])
   @@map("alert_history")
+}
+
+// ==================== MÉTRICAS Y SEGURIDAD ====================
+
+model AIUsageLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  companyId       String?  @map("company_id") @db.Uuid
+
+  // Detalles de la solicitud
+  provider        String   @db.VarChar(50) // "anthropic", "bedrock", "openai"
+  model           String   @db.VarChar(100)
+  promptType      String   @map("prompt_type") @db.VarChar(50) // "chat", "analysis", "generation"
+
+  // Tokens y costos
+  inputTokens     Int      @default(0) @map("input_tokens")
+  outputTokens    Int      @default(0) @map("output_tokens")
+  totalTokens     Int      @default(0) @map("total_tokens")
+  estimatedCost   Decimal  @default(0) @map("estimated_cost") @db.Decimal(10, 6)
+
+  // Tiempo de respuesta
+  responseTimeMs  Int      @default(0) @map("response_time_ms")
+
+  // Estado
+  isSuccess       Boolean  @default(true) @map("is_success")
+  errorMessage    String?  @map("error_message") @db.Text
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@index([provider])
+  @@map("ai_usage_logs")
+}
+
+model RateLimitLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  ipAddress       String   @map("ip_address") @db.VarChar(45) // Supports IPv6
+
+  // Endpoint y método
+  endpoint        String   @db.VarChar(255)
+  method          String   @db.VarChar(10)
+
+  // Contadores
+  requestCount    Int      @default(1) @map("request_count")
+  windowStart     DateTime @map("window_start") @db.Timestamptz
+  isBlocked       Boolean  @default(false) @map("is_blocked")
+
+  // Información adicional
+  userAgent       String?  @map("user_agent") @db.Text
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([ipAddress, endpoint])
+  @@index([userId])
+  @@index([windowStart])
+  @@map("rate_limit_logs")
+}
+
+model SecurityEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  ipAddress       String   @map("ip_address") @db.VarChar(45)
+
+  // Tipo de evento
+  eventType       String   @map("event_type") @db.VarChar(50) // "login_failed", "rate_limit", "suspicious_activity", "token_expired"
+  severity        String   @default("low") @db.VarChar(20) // "low", "medium", "high", "critical"
+
+  // Detalles
+  description     String   @db.Text
+  metadata        Json?    // Datos adicionales del evento
+
+  // Estado
+  isResolved      Boolean  @default(false) @map("is_resolved")
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedBy      String?  @map("resolved_by") @db.Uuid
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([ipAddress])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+model UserFeedback {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+
+  // Tipo de feedback
+  type            String   @db.VarChar(50) // "bug", "feature", "improvement", "satisfaction"
+
+  // Calificación (1-5 estrellas) para satisfaction
+  rating          Int?     @db.SmallInt
+
+  // Contenido
+  title           String?  @db.VarChar(255)
+  description     String   @db.Text
+
+  // Contexto
+  page            String?  @db.VarChar(255)
+  userAgent       String?  @map("user_agent") @db.Text
+
+  // Estado
+  status          String   @default("pending") @db.VarChar(20) // "pending", "reviewing", "resolved", "closed"
+  adminResponse   String?  @map("admin_response") @db.Text
+  respondedAt     DateTime? @map("responded_at") @db.Timestamptz
+  respondedBy     String?  @map("responded_by") @db.Uuid
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("user_feedback")
+}
+
+model ApiMetrics {
+  id              String   @id @default(uuid()) @db.Uuid
+
+  // Período de la métrica (hora)
+  periodStart     DateTime @map("period_start") @db.Timestamptz
+  periodEnd       DateTime @map("period_end") @db.Timestamptz
+
+  // Métricas de API
+  totalRequests   Int      @default(0) @map("total_requests")
+  successRequests Int      @default(0) @map("success_requests")
+  errorRequests   Int      @default(0) @map("error_requests")
+
+  // Tiempos de respuesta (ms)
+  avgResponseTime Int      @default(0) @map("avg_response_time")
+  maxResponseTime Int      @default(0) @map("max_response_time")
+  minResponseTime Int      @default(0) @map("min_response_time")
+
+  // Usuarios activos
+  activeUsers     Int      @default(0) @map("active_users")
+
+  // Endpoints más usados (JSON array)
+  topEndpoints    Json     @default("[]") @map("top_endpoints")
+
+  // Errores por tipo
+  errorsByType    Json     @default("{}") @map("errors_by_type")
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([periodStart])
+  @@index([periodStart])
+  @@map("api_metrics")
 }
 
 // ==================== CONFIGURACIÓN IA POR PROVEEDOR ====================

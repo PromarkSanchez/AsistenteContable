@@ -132,7 +132,7 @@ export default function LoginPage() {
               className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
             />
             <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-              Recordar cuenta
+              Recordar email
             </label>
           </div>
 
