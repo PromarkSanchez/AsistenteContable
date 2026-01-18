@@ -218,15 +218,32 @@ async function launchBrowser(): Promise<Browser> {
     // En Vercel/AWS Lambda: usar @sparticuz/chromium
     log('info', 'Usando @sparticuz/chromium para entorno serverless');
 
+    // Configurar chromium para serverless
+    chromium.setHeadlessMode = true;
+    chromium.setGraphicsMode = false;
+
     const executablePath = await chromium.executablePath();
     log('info', `Chromium path: ${executablePath}`);
 
-    return puppeteer.launch({
+    const browser = await puppeteer.launch({
       executablePath,
       headless: chromium.headless,
-      args: chromium.args,
+      ignoreHTTPSErrors: true,
+      args: [
+        ...chromium.args,
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--no-first-run',
+        '--no-zygote',
+        '--deterministic-fetch',
+        '--disable-features=IsolateOrigins',
+        '--disable-site-isolation-trials',
+      ],
       defaultViewport: chromium.defaultViewport,
     });
+
+    log('success', 'Navegador iniciado correctamente en Vercel');
+    return browser;
   } else {
     // En desarrollo local: usar Chrome instalado
     const executablePath = findLocalChromePath();

@@ -13,6 +13,14 @@
     "src/app/api/admin/alertas/seace-test/route.ts": {
       "memory": 1024,
       "maxDuration": 300
+    },
+    "src/app/api/admin/alertas/seace-accounts/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "src/app/api/companies/*/seace-run/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
     }
   }
 }
