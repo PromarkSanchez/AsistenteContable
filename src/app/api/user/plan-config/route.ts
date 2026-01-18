@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener configuración del plan
+    // @ts-ignore - cacheStrategy para Prisma Accelerate
     const planConfig = await prisma.planConfig.findUnique({
       where: { plan: user.plan },
       include: {
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
           orderBy: { orden: 'asc' },
         },
       },
+      cacheStrategy: { ttl: 60 }, // Cache 60 segundos
     });
 
     if (!planConfig) {

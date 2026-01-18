@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 });
     }
 
+    // @ts-ignore - cacheStrategy para Prisma Accelerate
     const plans = await prisma.planConfig.findMany({
       include: {
         menuItems: {
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { plan: 'asc' },
+      cacheStrategy: { ttl: 0 }, // Bypass cache
     });
 
     // Convertir BigInt a string para JSON
