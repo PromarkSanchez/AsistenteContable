@@ -714,7 +714,7 @@ export function QrScanner({ company, onClose, onSuccess }: QrScannerProps) {
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
-                    variant={detectTipoOperacion() === 'COMPRA' ? 'default' : 'outline'}
+                    variant={detectTipoOperacion() === 'COMPRA' ? 'primary' : 'outline'}
                     onClick={() => handleImport('COMPRA')}
                     disabled={importing}
                     className="flex-1"
@@ -723,7 +723,7 @@ export function QrScanner({ company, onClose, onSuccess }: QrScannerProps) {
                     COMPRA
                   </Button>
                   <Button
-                    variant={detectTipoOperacion() === 'VENTA' ? 'default' : 'outline'}
+                    variant={detectTipoOperacion() === 'VENTA' ? 'primary' : 'outline'}
                     onClick={() => handleImport('VENTA')}
                     disabled={importing}
                     className="flex-1"
@@ -760,7 +760,7 @@ export function QrScanner({ company, onClose, onSuccess }: QrScannerProps) {
               {/* Modo de escaneo para QR pequeños */}
               <div className="flex gap-2">
                 <Button
-                  variant={scanMode === 'normal' ? 'default' : 'outline'}
+                  variant={scanMode === 'normal' ? 'primary' : 'outline'}
                   size="sm"
                   className="flex-1"
                   onClick={() => setScanMode('normal')}
@@ -769,7 +769,7 @@ export function QrScanner({ company, onClose, onSuccess }: QrScannerProps) {
                   QR Normal
                 </Button>
                 <Button
-                  variant={scanMode === 'small' ? 'default' : 'outline'}
+                  variant={scanMode === 'small' ? 'primary' : 'outline'}
                   size="sm"
                   className="flex-1"
                   onClick={() => setScanMode('small')}
@@ -884,7 +884,7 @@ export function QrScanner({ company, onClose, onSuccess }: QrScannerProps) {
                     Iniciar Cámara
                   </Button>
                 ) : (
-                  <Button className="flex-1" variant="destructive" onClick={stopScanner}>
+                  <Button className="flex-1" variant="danger" onClick={stopScanner}>
                     <CameraOff className="w-4 h-4 mr-2" />
                     Detener Cámara
                   </Button>

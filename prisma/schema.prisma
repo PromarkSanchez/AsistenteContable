@@ -458,3 +458,154 @@ model StorageUsage {
 
   @@map("storage_usage")
 }
+
+// ==================== CONFIGURACIÓN DE PLANES ====================
+
+model PlanConfig {
+  id                String   @id @default(uuid()) @db.Uuid
+  plan              Plan     @unique
+  nombre            String   @db.VarChar(50)
+  descripcion       String?  @db.Text
+  precioMensual     Decimal  @default(0) @map("precio_mensual") @db.Decimal(10, 2)
+  precioAnual       Decimal  @default(0) @map("precio_anual") @db.Decimal(10, 2)
+
+  // Límites
+  maxEmpresas       Int      @default(1) @map("max_empresas")
+  maxComprobantes   Int      @default(100) @map("max_comprobantes_mes") // 0 = ilimitado
+  maxStorage        BigInt   @default(52428800) @map("max_storage") // bytes
+  maxUsuarios       Int      @default(1) @map("max_usuarios") // por empresa
+
+  // Features de IA
+  iaEnabled         Boolean  @default(false) @map("ia_enabled")
+  iaMaxConsultas    Int      @default(0) @map("ia_max_consultas_mes") // 0 = ilimitado
+  iaModelo          String?  @map("ia_modelo") @db.VarChar(50) // claude-3-haiku, claude-3-sonnet, etc.
+
+  // Features adicionales
+  facturacionEnabled     Boolean @default(false) @map("facturacion_enabled")
+  reportesAvanzados      Boolean @default(false) @map("reportes_avanzados")
+  librosElectronicos     Boolean @default(false) @map("libros_electronicos")
+  alertasEnabled         Boolean @default(false) @map("alertas_enabled")
+  apiAccess              Boolean @default(false) @map("api_access")
+  soportePrioritario     Boolean @default(false) @map("soporte_prioritario")
+
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  menuItems         PlanMenuItem[]
+
+  @@map("plan_configs")
+}
+
+model PlanMenuItem {
+  id              String     @id @default(uuid()) @db.Uuid
+  planConfigId    String     @map("plan_config_id") @db.Uuid
+  menuKey         String     @map("menu_key") @db.VarChar(50) // ej: "dashboard", "comprobantes", "declaraciones"
+  label           String     @db.VarChar(100)
+  icon            String?    @db.VarChar(50)
+  path            String     @db.VarChar(255)
+  orden           Int        @default(0)
+  isEnabled       Boolean    @default(true) @map("is_enabled")
+  isVisible       Boolean    @default(true) @map("is_visible")
+  parentKey       String?    @map("parent_key") @db.VarChar(50) // para submenús
+
+  planConfig PlanConfig @relation(fields: [planConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([planConfigId, menuKey])
+  @@index([planConfigId])
+  @@map("plan_menu_items")
+}
+
+// ==================== ALERTAS Y NOTIFICACIONES ====================
+
+model AlertConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  companyId       String?  @map("company_id") @db.Uuid
+
+  // Tipo de alerta
+  tipo            String   @db.VarChar(50) // "licitacion", "sunat", "vencimiento", "custom"
+  nombre          String   @db.VarChar(100)
+  descripcion     String?  @db.Text
+
+  // Filtros
+  palabrasClave   String[] @map("palabras_clave") // ej: ["inventario", "suministros"]
+  regiones        String[] // ej: ["HUANUCO", "LIMA", "TACNA"]
+  montoMinimo     Decimal? @map("monto_minimo") @db.Decimal(14, 2)
+  montoMaximo     Decimal? @map("monto_maximo") @db.Decimal(14, 2)
+  entidades       String[] // ej: ["SUNAT", "OSCE", "MEF"]
+
+  // Notificaciones
+  emailEnabled    Boolean  @default(true) @map("email_enabled")
+  emailDestino    String?  @map("email_destino") @db.VarChar(255)
+  pushEnabled     Boolean  @default(false) @map("push_enabled")
+  frecuencia      String   @default("diaria") @db.VarChar(20) // "inmediata", "diaria", "semanal"
+
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([companyId])
+  @@map("alert_configs")
+}
+
+model AlertHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  alertConfigId   String   @map("alert_config_id") @db.Uuid
+
+  titulo          String   @db.VarChar(255)
+  contenido       String   @db.Text
+  fuente          String   @db.VarChar(100) // "SEACE", "SUNAT", "OSCE"
+  urlOrigen       String?  @map("url_origen") @db.Text
+  fechaPublicacion DateTime? @map("fecha_publicacion") @db.Timestamptz
+
+  // Datos adicionales
+  region          String?  @db.VarChar(50)
+  entidad         String?  @db.VarChar(255)
+  monto           Decimal? @db.Decimal(14, 2)
+
+  // Estado
+  isRead          Boolean  @default(false) @map("is_read")
+  isNotified      Boolean  @default(false) @map("is_notified")
+  notifiedAt      DateTime? @map("notified_at") @db.Timestamptz
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([alertConfigId])
+  @@index([isRead])
+  @@map("alert_history")
+}
+
+// ==================== CONFIGURACIÓN IA POR PROVEEDOR ====================
+
+model AIProviderConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  provider        String   @unique @db.VarChar(50) // "anthropic", "bedrock", "openai"
+  displayName     String   @map("display_name") @db.VarChar(100)
+
+  // Configuración
+  isEnabled       Boolean  @default(false) @map("is_enabled")
+  isDefault       Boolean  @default(false) @map("is_default")
+
+  // Modelos disponibles
+  modelos         Json     @default("[]") // ["claude-3-haiku", "claude-3-sonnet", "claude-3-opus"]
+  modeloDefault   String?  @map("modelo_default") @db.VarChar(100)
+
+  // Límites
+  maxTokensInput  Int      @default(4096) @map("max_tokens_input")
+  maxTokensOutput Int      @default(4096) @map("max_tokens_output")
+
+  // Costos (para tracking)
+  costoPorInputToken  Decimal @default(0) @map("costo_por_input_token") @db.Decimal(10, 8)
+  costoPorOutputToken Decimal @default(0) @map("costo_por_output_token") @db.Decimal(10, 8)
+
+  // Credenciales encriptadas (se guardan en env, aquí solo referencia)
+  credentialsKey  String?  @map("credentials_key") @db.VarChar(100) // ej: "ANTHROPIC_API_KEY"
+  region          String?  @db.VarChar(50) // para Bedrock
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("ai_provider_configs")
+}

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth-store';
 import { useCompanyStore } from '@/store/company-store';
 import { useBrandingStore } from '@/store/branding-store';
+import { usePlanConfigStore } from '@/hooks/use-plan-config';
 import { companiesApi } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import {
@@ -22,18 +23,49 @@ import {
   Shield,
   Package,
   BadgeCheck,
+  Users,
+  Receipt,
+  BarChart3,
+  BookOpen,
+  Bell,
+  Bot,
+  LucideIcon,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
-const menuItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/comprobantes', label: 'Comprobantes', icon: FileText },
-  { href: '/declaraciones', label: 'Declaraciones', icon: Calculator },
-  { href: '/facturador', label: 'Facturador', icon: FileText },
-  { href: '/importar', label: 'Importar', icon: Upload },
-  { href: '/inventario', label: 'Inventario', icon: Package },
-  { href: '/fotochecks', label: 'Fotochecks', icon: BadgeCheck },
-  { href: '/configuracion', label: 'Configuración', icon: Settings },
+// Mapeo de iconos por nombre
+const ICON_MAP: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  FileText,
+  Calculator,
+  Upload,
+  Settings,
+  Package,
+  BadgeCheck,
+  Users,
+  Receipt,
+  BarChart3,
+  BookOpen,
+  Bell,
+  Bot,
+  Building2,
+};
+
+// Menús por defecto (fallback si no hay configuración)
+const defaultMenuItems = [
+  { key: 'dashboard', href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'comprobantes', href: '/comprobantes', label: 'Comprobantes', icon: FileText },
+  { key: 'declaraciones', href: '/declaraciones', label: 'Declaraciones', icon: Calculator },
+  { key: 'facturacion', href: '/facturador', label: 'Facturador', icon: Receipt },
+  { key: 'importar', href: '/importar', label: 'Importar', icon: Upload },
+  { key: 'terceros', href: '/terceros', label: 'Terceros', icon: Users },
+  { key: 'inventario', href: '/inventario', label: 'Inventario', icon: Package },
+  { key: 'reportes', href: '/reportes', label: 'Reportes', icon: BarChart3 },
+  { key: 'libros', href: '/libros', label: 'Libros Electrónicos', icon: BookOpen },
+  { key: 'alertas', href: '/alertas', label: 'Alertas', icon: Bell },
+  { key: 'asistente', href: '/asistente', label: 'Asistente IA', icon: Bot },
+  { key: 'fotochecks', href: '/fotochecks', label: 'Fotochecks', icon: BadgeCheck },
+  { key: 'configuracion', href: '/configuracion', label: 'Configuración', icon: Settings },
 ];
 
 const adminItems = [
@@ -50,9 +82,10 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
 
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, accessToken } = useAuthStore();
   const { selectedCompany, companies, setSelectedCompany, setCompanies } = useCompanyStore();
   const { appName, logoBase64, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
+  const { menus: planMenus, isSuperadmin, fetchPlanConfig } = usePlanConfigStore();
 
   // Cargar branding al montar
   useEffect(() => {
@@ -60,6 +93,44 @@ export default function DashboardLayout({
       loadBranding();
     }
   }, [brandingLoaded, loadBranding]);
+
+  // Cargar configuración del plan
+  useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      fetchPlanConfig(accessToken);
+    }
+  }, [isAuthenticated, accessToken, fetchPlanConfig]);
+
+  // Menús filtrados según el plan del usuario
+  const filteredMenuItems = useMemo(() => {
+    // Si es superadmin, mostrar todos los menús
+    if (isSuperadmin || user?.isSuperadmin) {
+      return defaultMenuItems;
+    }
+
+    // Si hay menús configurados del plan, usarlos
+    if (planMenus && planMenus.length > 0) {
+      return planMenus.map(menu => {
+        const defaultMenu = defaultMenuItems.find(d => d.key === menu.key);
+        const iconComponent = menu.icon ? ICON_MAP[menu.icon] : defaultMenu?.icon || FileText;
+        return {
+          key: menu.key,
+          href: menu.path || defaultMenu?.href || '/',
+          label: menu.label,
+          icon: iconComponent,
+        };
+      }).sort((a, b) => {
+        const orderA = planMenus.find(m => m.key === a.key)?.orden || 99;
+        const orderB = planMenus.find(m => m.key === b.key)?.orden || 99;
+        return orderA - orderB;
+      });
+    }
+
+    // Fallback: menús básicos para plan FREE
+    return defaultMenuItems.filter(item =>
+      ['dashboard', 'comprobantes', 'importar', 'terceros', 'configuracion'].includes(item.key)
+    );
+  }, [planMenus, isSuperadmin, user?.isSuperadmin]);
 
   // Cargar empresas del API al montar o cuando cambie la autenticación
   useEffect(() => {
@@ -192,14 +263,14 @@ export default function DashboardLayout({
 
         {/* Navigation */}
         <nav className="p-4 space-y-1">
-          {menuItems.map((item) => (
+          {filteredMenuItems.map((item) => (
             <Link
-              key={item.href}
+              key={item.key || item.href}
               href={item.href}
               onClick={() => setSidebarOpen(false)}
               className={cn(
                 'flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                pathname === item.href
+                pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
                   ? 'bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               )}

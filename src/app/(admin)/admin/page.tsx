@@ -11,6 +11,8 @@ import {
   Crown,
   UserCheck,
   Calendar,
+  Settings2,
+  Bell,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth-store';
@@ -198,6 +200,38 @@ export default function AdminPage() {
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white">Configuración IA</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Configurar asistente de IA</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/plans">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-yellow-500">
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                  <Settings2 className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Configuración de Planes</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Límites, menús y funcionalidades</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/alerts">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-orange-500">
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                  <Bell className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Sistema de Alertas</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Licitaciones, SUNAT, notificaciones</p>
                 </div>
               </div>
             </CardContent>
