@@ -71,8 +71,9 @@ export async function calcularTributosDelPeriodo(
   });
 
   // Separar ventas y compras
-  const ventas = comprobantes.filter((c) => c.tipo === 'VENTA');
-  const compras = comprobantes.filter((c) => c.tipo === 'COMPRA');
+  type ComprobanteType = { tipo: string; [key: string]: unknown };
+  const ventas = comprobantes.filter((c: ComprobanteType) => c.tipo === 'VENTA');
+  const compras = comprobantes.filter((c: ComprobanteType) => c.tipo === 'COMPRA');
 
   // ===== CÁLCULO DE VENTAS =====
   let ventasGravadas = 0;

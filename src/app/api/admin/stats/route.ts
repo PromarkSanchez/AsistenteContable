@@ -67,7 +67,8 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Formatear estadísticas por plan
-    const planStats = usersByPlan.reduce((acc, item) => {
+    type PlanGroup = { plan: string; _count: { id: number } };
+    const planStats = usersByPlan.reduce((acc: Record<string, number>, item: PlanGroup) => {
       acc[item.plan] = item._count.id;
       return acc;
     }, {} as Record<string, number>);
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
       totalComprobantes,
       comprobantesThisMonth,
       usersByPlan: planStats,
-      recentUsers: recentUsers.map(u => ({
+      recentUsers: recentUsers.map((u: { id: string; email: string; fullName: string | null; plan: string; createdAt: Date; _count: { companies: number } }) => ({
         ...u,
         companiesCount: u._count.companies,
       })),

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const allowedPlansSetting = await prisma.systemSetting.findUnique({
       where: { key: 'alert_allowed_plans' },
     });
-    const allowedPlans = allowedPlansSetting?.value?.split(',').map(p => p.trim()) || ['PRO'];
+    const allowedPlans = allowedPlansSetting?.value?.split(',').map((p: string) => p.trim()) || ['PRO'];
 
     if (!user.isSuperadmin && !allowedPlans.includes(user.plan)) {
       return NextResponse.json({

@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       stats: {
         totalLicitaciones: total,
         totalEtapas,
-        byFuente: stats.reduce((acc, s) => {
+        byFuente: stats.reduce((acc: Record<string, number>, s: { fuente: string; _count: { id: number } }) => {
           acc[s.fuente] = s._count.id;
           return acc;
         }, {} as Record<string, number>),

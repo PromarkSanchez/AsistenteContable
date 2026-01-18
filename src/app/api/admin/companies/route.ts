@@ -73,8 +73,19 @@ export async function GET(request: NextRequest) {
       prisma.company.count({ where }),
     ]);
 
+    type CompanySelect = {
+      id: string;
+      ruc: string;
+      razonSocial: string;
+      regimen: string;
+      usuarioSol: string | null;
+      claveSolEncrypted: string | null;
+      createdAt: Date;
+      user: { id: string; email: string; fullName: string | null };
+      _count: { comprobantes: number; declaraciones: number };
+    };
     return NextResponse.json({
-      data: companies.map(c => ({
+      data: companies.map((c: CompanySelect) => ({
         id: c.id,
         ruc: c.ruc,
         razonSocial: c.razonSocial,

@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return NextResponse.json({
-      data: comprobantes.map((c) => ({
+      data: comprobantes.map((c: { total: unknown; [key: string]: unknown }) => ({
         ...c,
         total: Number(c.total),
       })),

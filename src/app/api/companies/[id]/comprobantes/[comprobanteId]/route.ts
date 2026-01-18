@@ -55,7 +55,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       igv: Number(comprobante.igv),
       otrosTributos: Number(comprobante.otrosTributos),
       total: Number(comprobante.total),
-      items: comprobante.items.map(item => ({
+      items: comprobante.items.map((item: { cantidad: unknown; precioUnitario: unknown; valorVenta: unknown; descuento: unknown; igv: unknown; [key: string]: unknown }) => ({
         ...item,
         cantidad: Number(item.cantidad),
         precioUnitario: Number(item.precioUnitario),

@@ -43,15 +43,18 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Obtener usuarios por separado
-    const userIds = [...new Set(feedback.map(f => f.userId))];
+    type FeedbackType = { id: string; userId: string; type: string; status: string; createdAt: Date };
+    type UserSelect = { id: string; email: string; fullName: string | null };
+
+    const userIds = [...new Set(feedback.map((f: FeedbackType) => f.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, email: true, fullName: true },
     });
 
-    const usersMap = new Map(users.map(u => [u.id, u]));
+    const usersMap = new Map(users.map((u: UserSelect) => [u.id, u]));
 
-    const feedbackWithUsers = feedback.map(f => ({
+    const feedbackWithUsers = feedback.map((f: FeedbackType) => ({
       ...f,
       user: usersMap.get(f.userId) || { id: f.userId, email: 'Usuario eliminado', fullName: null },
     }));

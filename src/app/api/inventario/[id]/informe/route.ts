@@ -65,13 +65,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     };
 
+    // Tipo para items del inventario
+    type InventarioItem = {
+      codigoBien: string;
+      descripcion: string;
+      unidadMedida: string;
+      inventarioUnidad: unknown;
+      inventarioImporte: unknown;
+      kardexUnidad: unknown;
+      costoUnitario: unknown;
+      kardexImporte: unknown;
+      sobrantesUnidad: unknown;
+      sobrantesImporte: unknown;
+      faltantesUnidad: unknown;
+      faltantesImporte: unknown;
+    };
+
     // Calcular estadísticas
     const totalItems = inventario.items.length;
-    const itemsConSobrantes = inventario.items.filter(i => Number(i.sobrantesUnidad) > 0).length;
-    const itemsConFaltantes = inventario.items.filter(i => Number(i.faltantesUnidad) > 0).length;
+    const itemsConSobrantes = inventario.items.filter((i: InventarioItem) => Number(i.sobrantesUnidad) > 0).length;
+    const itemsConFaltantes = inventario.items.filter((i: InventarioItem) => Number(i.faltantesUnidad) > 0).length;
     const itemsSinDiferencia = totalItems - itemsConSobrantes - itemsConFaltantes;
-    const sobrantes = inventario.items.filter(i => Number(i.sobrantesUnidad) > 0);
-    const faltantes = inventario.items.filter(i => Number(i.faltantesUnidad) > 0);
+    const sobrantes = inventario.items.filter((i: InventarioItem) => Number(i.sobrantesUnidad) > 0);
+    const faltantes = inventario.items.filter((i: InventarioItem) => Number(i.faltantesUnidad) > 0);
 
     // Generar HTML
     const html = `
@@ -580,7 +596,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         </tr>
       </thead>
       <tbody>
-        ${inventario.items.map(item => `
+        ${inventario.items.map((item: InventarioItem) => `
           <tr>
             <td>${item.codigoBien}</td>
             <td>${item.descripcion}</td>
@@ -625,7 +641,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         </tr>
       </thead>
       <tbody>
-        ${sobrantes.map(item => `
+        ${sobrantes.map((item: InventarioItem) => `
           <tr>
             <td>${item.codigoBien}</td>
             <td>${item.descripcion}</td>
@@ -635,7 +651,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         `).join('')}
         <tr class="total-row">
           <td colspan="2"><strong>TOTAL SOBRANTES</strong></td>
-          <td class="text-right"><strong>${formatNumber(sobrantes.reduce((sum, i) => sum + Number(i.sobrantesUnidad), 0))}</strong></td>
+          <td class="text-right"><strong>${formatNumber(sobrantes.reduce((sum: number, i: InventarioItem) => sum + Number(i.sobrantesUnidad), 0))}</strong></td>
           <td class="text-right"><strong>${formatCurrency(Number(inventario.totalSobrantesImporte))}</strong></td>
         </tr>
       </tbody>
@@ -658,7 +674,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         </tr>
       </thead>
       <tbody>
-        ${faltantes.map(item => `
+        ${faltantes.map((item: InventarioItem) => `
           <tr>
             <td>${item.codigoBien}</td>
             <td>${item.descripcion}</td>
@@ -668,7 +684,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         `).join('')}
         <tr class="total-row">
           <td colspan="2"><strong>TOTAL FALTANTES</strong></td>
-          <td class="text-right"><strong>${formatNumber(faltantes.reduce((sum, i) => sum + Number(i.faltantesUnidad), 0))}</strong></td>
+          <td class="text-right"><strong>${formatNumber(faltantes.reduce((sum: number, i: InventarioItem) => sum + Number(i.faltantesUnidad), 0))}</strong></td>
           <td class="text-right"><strong>${formatCurrency(Number(inventario.totalFaltantesImporte))}</strong></td>
         </tr>
       </tbody>

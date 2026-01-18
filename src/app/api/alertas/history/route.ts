@@ -18,7 +18,7 @@ async function checkAlertAccess(userId: string): Promise<{ allowed: boolean; pla
   });
 
   // Por defecto solo PRO tiene acceso si no hay configuración
-  const allowedPlans = setting?.value ? setting.value.split(',').map(p => p.trim()) : ['PRO'];
+  const allowedPlans = setting?.value ? setting.value.split(',').map((p: string) => p.trim()) : ['PRO'];
 
   return {
     allowed: allowedPlans.includes(userPlan),
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       where: { userId },
       select: { id: true },
     });
-    const configIds = userConfigs.map(c => c.id);
+    const configIds = userConfigs.map((c: { id: string }) => c.id);
 
     // Filtrar historial
     const whereClause: Record<string, unknown> = {
@@ -125,7 +125,7 @@ export async function PUT(request: NextRequest) {
       where: { userId },
       select: { id: true },
     });
-    const configIds = userConfigs.map(c => c.id);
+    const configIds = userConfigs.map((c: { id: string }) => c.id);
 
     if (markAllRead) {
       // Marcar todas como leídas

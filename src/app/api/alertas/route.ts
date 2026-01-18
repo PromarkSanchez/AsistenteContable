@@ -18,7 +18,7 @@ async function checkAlertAccess(userId: string): Promise<{ allowed: boolean; pla
   });
 
   // Por defecto solo PRO tiene acceso si no hay configuración
-  const allowedPlans = setting?.value ? setting.value.split(',').map(p => p.trim()) : ['PRO'];
+  const allowedPlans = setting?.value ? setting.value.split(',').map((p: string) => p.trim()) : ['PRO'];
 
   return {
     allowed: allowedPlans.includes(userPlan),
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Obtener historial de alertas recientes
-    const configIds = alertConfigs.map(c => c.id);
+    const configIds = alertConfigs.map((c: { id: string }) => c.id);
     const alertHistory = await prisma.alertHistory.findMany({
       where: {
         alertConfigId: { in: configIds },

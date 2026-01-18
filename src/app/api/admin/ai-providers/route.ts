@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import type { AIProviderConfig } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Convertir Decimal y verificar si las credenciales están configuradas en env
-    const providersFormatted = providers.map(provider => ({
+    const providersFormatted = providers.map((provider: AIProviderConfig) => ({
       ...provider,
       costoPorInputToken: Number(provider.costoPorInputToken),
       costoPorOutputToken: Number(provider.costoPorOutputToken),

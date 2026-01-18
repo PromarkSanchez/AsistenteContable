@@ -252,7 +252,7 @@ export async function processUserAlerts(userId: string): Promise<number> {
       return 0;
     }
 
-    const configIds = alertConfigs.map(c => c.id);
+    const configIds = alertConfigs.map((c: { id: string }) => c.id);
 
     // Obtener historial no notificado
     const pendingAlerts = await prisma.alertHistory.findMany({
@@ -281,7 +281,7 @@ export async function processUserAlerts(userId: string): Promise<number> {
 
     // Enviar notificaciones
     for (const alert of pendingAlerts) {
-      const config = alertConfigs.find(c => c.id === alert.alertConfigId);
+      const config = alertConfigs.find((c: { id: string; emailDestino?: string | null }) => c.id === alert.alertConfigId);
       const emailDestino = config?.emailDestino || user.email;
 
       const success = await sendAlertEmail({

@@ -66,8 +66,19 @@ export async function GET(request: NextRequest) {
       prisma.user.count({ where }),
     ]);
 
+    type UserSelect = {
+      id: string;
+      email: string;
+      fullName: string | null;
+      plan: string;
+      isActive: boolean;
+      isSuperadmin: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+      _count: { companies: number };
+    };
     return NextResponse.json({
-      data: users.map(u => ({
+      data: users.map((u: UserSelect) => ({
         ...u,
         companiesCount: u._count.companies,
       })),

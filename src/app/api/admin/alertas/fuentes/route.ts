@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       } else if (setting.key === 'alert_cron_last_run') {
         cronConfig.lastRun = setting.value;
       } else if (setting.key === 'alert_allowed_plans') {
-        allowedPlans = setting.value ? setting.value.split(',').map(p => p.trim()) : ['PRO'];
+        allowedPlans = setting.value ? setting.value.split(',').map((p: string) => p.trim()) : ['PRO'];
       }
     }
 

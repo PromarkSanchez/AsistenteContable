@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
     });
 
     // Transformar para agregar flags y ocultar datos sensibles
-    const companiesResponse = companies.map((company) => ({
+    type CompanyType = { usuarioSol: string | null; certificadoDigital: Buffer | null; [key: string]: unknown };
+    const companiesResponse = companies.map((company: CompanyType) => ({
       ...company,
       hasCredentials: !!company.usuarioSol,
       hasCertificado: !!company.certificadoDigital,

@@ -38,7 +38,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     // Convertir Decimal a number
-    const declaracionesResponse = declaraciones.map((d) => ({
+    type DeclaracionType = { [key: string]: unknown };
+    const declaracionesResponse = declaraciones.map((d: DeclaracionType) => ({
       ...d,
       ventasGravadas: Number(d.ventasGravadas),
       ventasNoGravadas: Number(d.ventasNoGravadas),

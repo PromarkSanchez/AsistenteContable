@@ -47,12 +47,15 @@ export async function checkPendingAlerts(): Promise<{
     console.log(`[AlertScheduler] Verificando ${alertConfigs.length} configuraciones de alerta`);
 
     // 2. Obtener usuarios para cada config
-    const userIds = [...new Set(alertConfigs.map(c => c.userId))];
+    type ConfigType = { id: string; userId: string; [key: string]: unknown };
+    type UserType = { id: string; email: string; fullName: string | null; plan?: string };
+
+    const userIds = [...new Set(alertConfigs.map((c: ConfigType) => c.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, email: true, fullName: true, plan: true },
     });
-    const userMap = new Map(users.map(u => [u.id, u]));
+    const userMap = new Map<string, UserType>(users.map((u: UserType) => [u.id, u]));
 
     // 3. Obtener licitaciones activas con etapas próximas a vencer
     const today = new Date();
@@ -107,7 +110,7 @@ export async function checkPendingAlerts(): Promise<{
 
         // Verificar filtros de entidad
         if (config.entidades.length > 0) {
-          const entidadMatch = config.entidades.some(e =>
+          const entidadMatch = config.entidades.some((e: string) =>
             licitacion.entidad.toLowerCase().includes(e.toLowerCase()) ||
             (licitacion.siglaEntidad && licitacion.siglaEntidad.toLowerCase().includes(e.toLowerCase()))
           );
@@ -125,7 +128,7 @@ export async function checkPendingAlerts(): Promise<{
         // Verificar palabras clave en el objeto de contratación
         if (config.palabrasClave.length > 0) {
           const textoCompleto = `${licitacion.objetoContratacion} ${licitacion.nomenclatura}`.toLowerCase();
-          const hayCoincidencia = config.palabrasClave.some(palabra =>
+          const hayCoincidencia = config.palabrasClave.some((palabra: string) =>
             textoCompleto.includes(palabra.toLowerCase())
           );
           if (!hayCoincidencia) continue;
@@ -150,7 +153,7 @@ export async function checkPendingAlerts(): Promise<{
             // Verificar si ya se envió esta notificación para este día específico
             // Incluimos el día en el tipo de notificación para poder enviar múltiples alertas
             const tipoNotificacion = `vencimiento_${diasRestantes}d`;
-            const yaNotificado = licitacion.notificaciones.some(n =>
+            const yaNotificado = licitacion.notificaciones.some((n: { alertConfigId: string; etapaNotificada: string; tipoNotificacion: string }) =>
               n.alertConfigId === config.id &&
               n.etapaNotificada === etapa.nombreEtapa &&
               n.tipoNotificacion === tipoNotificacion
@@ -166,8 +169,8 @@ export async function checkPendingAlerts(): Promise<{
                 etapa: etapa.nombreEtapa,
                 fechaVencimiento,
                 diasRestantes,
-                userEmail: config.emailDestino || user.email,
-                userName: user.fullName || user.email,
+                userEmail: config.emailDestino || (user as UserType).email,
+                userName: (user as UserType).fullName || (user as UserType).email,
               });
             }
           }
@@ -407,12 +410,15 @@ export async function notifyNewLicitaciones(): Promise<{
     });
 
     // Obtener usuarios
-    const userIds = [...new Set(alertConfigs.map(c => c.userId))];
+    type ConfigTypeLocal = { id: string; userId: string; [key: string]: unknown };
+    type UserTypeLocal = { id: string; email: string; fullName: string | null };
+
+    const userIds = [...new Set(alertConfigs.map((c: ConfigTypeLocal) => c.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, email: true, fullName: true },
     });
-    const userMap = new Map(users.map(u => [u.id, u]));
+    const userMap = new Map<string, UserTypeLocal>(users.map((u: UserTypeLocal) => [u.id, u]));
 
     // Notificar cada licitación nueva a los usuarios que coincidan
     for (const licitacion of nuevasLicitaciones) {
@@ -428,14 +434,14 @@ export async function notifyNewLicitaciones(): Promise<{
         }
 
         if (matches && config.entidades.length > 0) {
-          matches = config.entidades.some(e =>
+          matches = config.entidades.some((e: string) =>
             licitacion.entidad.toLowerCase().includes(e.toLowerCase())
           );
         }
 
         if (matches && config.palabrasClave.length > 0) {
           const texto = `${licitacion.objetoContratacion} ${licitacion.nomenclatura}`.toLowerCase();
-          matches = config.palabrasClave.some(p => texto.includes(p.toLowerCase()));
+          matches = config.palabrasClave.some((p: string) => texto.includes(p.toLowerCase()));
         }
 
         if (matches) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import type { AlertHistory, AlertConfig, User } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,24 +108,27 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Obtener configuraciones para mostrar info del usuario
-    const configIds = [...new Set(history.map(h => h.alertConfigId))];
+    const configIds = [...new Set(history.map((h: AlertHistory) => h.alertConfigId))];
     const configs = await prisma.alertConfig.findMany({
       where: { id: { in: configIds } },
       select: { id: true, userId: true, nombre: true },
     });
 
-    const userIds = [...new Set(configs.map(c => c.userId))];
+    type ConfigSelect = { id: string; userId: string; nombre: string };
+    type UserSelect = { id: string; email: string; fullName: string | null };
+
+    const userIds = [...new Set(configs.map((c: ConfigSelect) => c.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, email: true, fullName: true },
     });
 
-    const configsMap = new Map(configs.map(c => [c.id, c]));
-    const usersMap = new Map(users.map(u => [u.id, u]));
+    const configsMap = new Map<string, ConfigSelect>(configs.map((c: ConfigSelect) => [c.id, c]));
+    const usersMap = new Map<string, UserSelect>(users.map((u: UserSelect) => [u.id, u]));
 
-    const historyWithUser = history.map(h => {
+    const historyWithUser = history.map((h: AlertHistory) => {
       const config = configsMap.get(h.alertConfigId);
-      const user = config ? usersMap.get(config.userId) : null;
+      const user = config ? usersMap.get(config.userId) : undefined;
       return {
         ...h,
         configName: config?.nombre || 'Desconocido',
@@ -189,7 +193,7 @@ export async function POST(request: NextRequest) {
     for (const config of configs) {
       // Verificar si coincide con los filtros
       const matchesPalabrasClave = config.palabrasClave.length === 0 ||
-        config.palabrasClave.some(p =>
+        config.palabrasClave.some((p: string) =>
           titulo.toLowerCase().includes(p.toLowerCase()) ||
           contenido.toLowerCase().includes(p.toLowerCase())
         );

@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         apiAccess: planConfig.apiAccess,
         soportePrioritario: planConfig.soportePrioritario,
       },
-      menus: planConfig.menuItems.map(menu => ({
+      menus: planConfig.menuItems.map((menu: { menuKey: string; label: string; icon: string; path: string; orden: number }) => ({
         key: menu.menuKey,
         label: menu.label,
         icon: menu.icon,

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<TestAlert
       }
 
       if (config.entidades.length > 0) {
-        const entidadMatch = config.entidades.some(e =>
+        const entidadMatch = config.entidades.some((e: string) =>
           licitacion.entidad.toLowerCase().includes(e.toLowerCase()) ||
           (licitacion.siglaEntidad && licitacion.siglaEntidad.toLowerCase().includes(e.toLowerCase()))
         );
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<TestAlert
 
       if (config.palabrasClave.length > 0) {
         const texto = `${licitacion.objetoContratacion} ${licitacion.nomenclatura}`.toLowerCase();
-        const match = config.palabrasClave.some(p => texto.includes(p.toLowerCase()));
+        const match = config.palabrasClave.some((p: string) => texto.includes(p.toLowerCase()));
         if (!match) continue;
       }
 
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<TestAlert
       htmlContent += `
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
           <p style="color: #6b7280; font-size: 12px;">
-            Configuración de días de anticipación: ${diasArray.map(d => d === 0 ? 'mismo día' : `${d} día(s)`).join(', ')}
+            Configuración de días de anticipación: ${diasArray.map((d: number) => d === 0 ? 'mismo día' : `${d} día(s)`).join(', ')}
             <br>Este es un mensaje de prueba del Sistema de Alertas de ${appName}.
           </p>
         </div>

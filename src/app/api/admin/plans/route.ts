@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
     });
 
     // Convertir BigInt a string para JSON
-    const plansFormatted = plans.map(plan => ({
+    type PlanType = { maxStorage: bigint; precioMensual: unknown; precioAnual: unknown };
+    const plansFormatted = plans.map((plan: PlanType) => ({
       ...plan,
       maxStorage: plan.maxStorage.toString(),
       precioMensual: Number(plan.precioMensual),

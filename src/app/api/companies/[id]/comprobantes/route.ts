@@ -63,7 +63,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     ]);
 
     // Convertir Decimal a number para el JSON
-    const comprobantesResponse = comprobantes.map((c) => ({
+    type ComprobanteType = { tipoCambio: unknown; baseImponible: unknown; igv: unknown; otrosTributos: unknown; total: unknown; [key: string]: unknown };
+    const comprobantesResponse = comprobantes.map((c: ComprobanteType) => ({
       ...c,
       tipoCambio: c.tipoCambio ? Number(c.tipoCambio) : null,
       baseImponible: Number(c.baseImponible),

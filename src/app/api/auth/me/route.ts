@@ -66,7 +66,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Transformar empresas para agregar campos calculados
-    const companiesWithFlags = user.companies.map((company) => ({
+    type CompanyType = { usuarioSol: string | null; certificadoDigital: Buffer | null; [key: string]: unknown };
+    const companiesWithFlags = user.companies.map((company: CompanyType) => ({
       ...company,
       hasCredentials: !!company.usuarioSol,
       hasCertificado: !!company.certificadoDigital,
