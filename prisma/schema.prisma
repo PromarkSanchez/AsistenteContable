@@ -110,6 +110,14 @@ model Company {
   certificadoDigital          String?  @map("certificado_digital") @db.Text
   certificadoPasswordEncrypted String? @map("certificado_password_encrypted") @db.VarChar(500)
 
+  // Credenciales SEACE (encriptadas)
+  usuarioSeace                String?  @map("usuario_seace") @db.VarChar(255)
+  claveSeaceEncrypted         String?  @map("clave_seace_encrypted") @db.VarChar(500)
+  entidadSeace                String?  @map("entidad_seace") @db.VarChar(500)
+  siglaEntidadSeace           String?  @map("sigla_entidad_seace") @db.VarChar(50)
+  anioSeace                   String?  @map("anio_seace") @db.VarChar(4)
+  seaceEnabled                Boolean  @default(false) @map("seace_enabled")
+
   // Series de comprobantes
   serieFactura        String   @default("F001") @map("serie_factura") @db.VarChar(4)
   serieBoleta         String   @default("B001") @map("serie_boleta") @db.VarChar(4)

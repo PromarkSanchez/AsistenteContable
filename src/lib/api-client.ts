@@ -294,6 +294,40 @@ export const companiesApi = {
 
   deleteHuella: (id: string) =>
     apiClient.delete(`/api/companies/${id}/huella`),
+
+  // SEACE Credentials
+  getSeaceConfig: (id: string) =>
+    apiClient.get<{
+      config: {
+        usuarioSeace: string;
+        hasClaveSeace: boolean;
+        entidadSeace: string;
+        siglaEntidadSeace: string;
+        anioSeace: string;
+        seaceEnabled: boolean;
+      };
+    }>(`/api/companies/${id}/seace-credentials`),
+
+  updateSeaceCredentials: (id: string, data: {
+    usuarioSeace?: string;
+    claveSeace?: string;
+    entidadSeace?: string;
+    siglaEntidadSeace?: string;
+    anioSeace?: string;
+    seaceEnabled?: boolean;
+  }) =>
+    apiClient.put<{ success: boolean; message: string }>(`/api/companies/${id}/seace-credentials`, data),
+
+  deleteSeaceCredentials: (id: string) =>
+    apiClient.delete<{ success: boolean; message: string }>(`/api/companies/${id}/seace-credentials`),
+
+  runSeaceScraper: (id: string) =>
+    apiClient.post<{
+      success: boolean;
+      sessionId?: string;
+      backgroundMode?: boolean;
+      message: string;
+    }>(`/api/companies/${id}/seace-run`, {}),
 };
 
 // ==================== APIs DE COMPROBANTES ====================

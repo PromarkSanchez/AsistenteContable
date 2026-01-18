@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,20 @@ import {
   Trash2,
   Globe,
   Terminal,
+  Info,
+  AlertTriangle,
+  Bug,
+  ChevronUp,
 } from 'lucide-react';
+
+// Log entry type for inline console
+interface InlineLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'success' | 'warning' | 'error' | 'debug';
+  source: string;
+  message: string;
+}
 
 interface AlertStats {
   configs: {
@@ -213,6 +226,36 @@ export default function AdminAlertasPage() {
     success: boolean;
     message: string;
   } | null>(null);
+  const [hasClaveConfigured, setHasClaveConfigured] = useState(false);
+  const [wantsToChangeClave, setWantsToChangeClave] = useState(false);
+
+  // SEACE User Accounts state (cuentas de usuarios)
+  const [seaceAccounts, setSeaceAccounts] = useState<{
+    id: string;
+    ruc: string;
+    razonSocial: string;
+    usuarioSeace: string;
+    entidadSeace: string;
+    siglaEntidadSeace: string;
+    anioSeace: string;
+    seaceEnabled: boolean;
+    user: { id: string; email: string; fullName: string | null };
+  }[]>([]);
+  const [seaceAccountsStats, setSeaceAccountsStats] = useState<{
+    total: number;
+    enabled: number;
+    disabled: number;
+  } | null>(null);
+  const [loadingSeaceAccounts, setLoadingSeaceAccounts] = useState(false);
+  const [togglingAccount, setTogglingAccount] = useState<string | null>(null);
+  const [runningScraperForAccount, setRunningScraperForAccount] = useState<string | null>(null);
+
+  // Inline console state for SEACE accounts
+  const [accountSessionId, setAccountSessionId] = useState<string | null>(null);
+  const [accountLogs, setAccountLogs] = useState<InlineLogEntry[]>([]);
+  const [accountSessionStatus, setAccountSessionStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
+  const [showAccountLogs, setShowAccountLogs] = useState(false);
+  const accountLogsEndRef = useRef<HTMLDivElement>(null);
 
   // Licitaciones state
   const [licitaciones, setLicitaciones] = useState<ScrapedLicitacion[]>([]);
@@ -273,18 +316,198 @@ export default function AdminAlertasPage() {
     try {
       const data = await apiClient.get<{ config: typeof seaceConfig }>('/api/admin/alertas/seace-test');
       if (data.config) {
-        setSeaceConfig(data.config);
+        // Detectar si hay clave configurada (viene como ••••••••)
+        const claveEsMascara = !!data.config.clave && /^[•]+$/.test(data.config.clave);
+        setHasClaveConfigured(claveEsMascara);
+        setWantsToChangeClave(false);
+        // No poner la máscara en el campo, dejarla vacía
+        setSeaceConfig({
+          ...data.config,
+          clave: claveEsMascara ? '' : data.config.clave,
+        });
       }
     } catch (error) {
       console.error('Error cargando config SEACE:', error);
     }
   };
 
+  // Cargar cuentas SEACE de usuarios
+  const loadSeaceAccounts = async () => {
+    setLoadingSeaceAccounts(true);
+    try {
+      const data = await apiClient.get<{
+        accounts: typeof seaceAccounts;
+        stats: typeof seaceAccountsStats;
+      }>('/api/admin/alertas/seace-accounts');
+      setSeaceAccounts(data.accounts);
+      setSeaceAccountsStats(data.stats);
+    } catch (error) {
+      console.error('Error cargando cuentas SEACE:', error);
+    } finally {
+      setLoadingSeaceAccounts(false);
+    }
+  };
+
+  // Toggle habilitación de cuenta SEACE para cron
+  const handleToggleSeaceAccount = async (companyId: string, enabled: boolean) => {
+    setTogglingAccount(companyId);
+    try {
+      await apiClient.put('/api/admin/alertas/seace-accounts', { companyId, seaceEnabled: enabled });
+      setSeaceAccounts(prev =>
+        prev.map(acc => acc.id === companyId ? { ...acc, seaceEnabled: enabled } : acc)
+      );
+      setSeaceAccountsStats(prev => prev ? {
+        ...prev,
+        enabled: enabled ? prev.enabled + 1 : prev.enabled - 1,
+        disabled: enabled ? prev.disabled - 1 : prev.disabled + 1,
+      } : prev);
+      setMessage({ type: 'success', text: `Cuenta ${enabled ? 'habilitada' : 'deshabilitada'} para el cron` });
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error actualizando cuenta SEACE' });
+    } finally {
+      setTogglingAccount(null);
+    }
+  };
+
+  // Ejecutar scraper para una cuenta específica
+  const handleRunScraperForAccount = async (companyId: string, razonSocial: string) => {
+    setRunningScraperForAccount(companyId);
+    setAccountLogs([]);
+    setAccountSessionStatus('running');
+    try {
+      const result = await apiClient.post<{
+        success: boolean;
+        message: string;
+        sessionId?: string;
+        backgroundMode?: boolean;
+      }>('/api/admin/alertas/seace-accounts', { companyId });
+
+      if (result.success && result.sessionId) {
+        // Mostrar consola inline en el mismo modal
+        setAccountSessionId(result.sessionId);
+        setShowAccountLogs(true);
+      } else if (!result.success) {
+        setMessage({ type: 'error', text: result.message });
+        setAccountSessionStatus('failed');
+        setRunningScraperForAccount(null);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: `Error ejecutando scraper para ${razonSocial}` });
+      setAccountSessionStatus('failed');
+      setRunningScraperForAccount(null);
+    }
+  };
+
+  // Polling de logs para cuenta SEACE en el modal
+  useEffect(() => {
+    if (!accountSessionId || !showAccountLogs || accountSessionStatus !== 'running') {
+      return;
+    }
+
+    let isPollingActive = true;
+    let lastLogId = '';
+    let pollCount = 0;
+    const maxPolls = 300; // 5 minutos máximo
+
+    const pollLogs = async (): Promise<boolean> => {
+      if (!isPollingActive) return false;
+
+      try {
+        const response = await fetch(`/api/admin/alertas/scraper-logs?sessionId=${accountSessionId}&action=history`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) return isPollingActive;
+
+        const data = await response.json();
+
+        if (data.logs && Array.isArray(data.logs)) {
+          const newLogs = data.logs.filter((log: InlineLogEntry) => {
+            if (!lastLogId) return true;
+            return log.id > lastLogId;
+          });
+
+          if (newLogs.length > 0) {
+            setAccountLogs(prev => {
+              const existingIds = new Set(prev.map(l => l.id));
+              const uniqueNew = newLogs.filter((l: InlineLogEntry) => !existingIds.has(l.id));
+              return [...prev, ...uniqueNew];
+            });
+            lastLogId = data.logs[data.logs.length - 1]?.id || lastLogId;
+          }
+        }
+
+        // Verificar si la sesión terminó
+        if (data.session) {
+          if (data.session.status === 'completed') {
+            setAccountSessionStatus('completed');
+            setRunningScraperForAccount(null);
+            return false;
+          } else if (data.session.status === 'failed') {
+            setAccountSessionStatus('failed');
+            setRunningScraperForAccount(null);
+            return false;
+          }
+        }
+
+        return isPollingActive;
+      } catch (error) {
+        console.error('Error polling account logs:', error);
+        return isPollingActive;
+      }
+    };
+
+    const intervalId = setInterval(async () => {
+      if (!isPollingActive) return;
+
+      pollCount++;
+      if (pollCount > maxPolls) {
+        isPollingActive = false;
+        setAccountSessionStatus('failed');
+        setRunningScraperForAccount(null);
+        return;
+      }
+
+      const shouldContinue = await pollLogs();
+      if (!shouldContinue) {
+        isPollingActive = false;
+      }
+    }, 1000);
+
+    // Poll inmediatamente al inicio
+    pollLogs();
+
+    return () => {
+      isPollingActive = false;
+      clearInterval(intervalId);
+    };
+  }, [accountSessionId, showAccountLogs, accountSessionStatus]);
+
+  // Auto-scroll account logs
+  useEffect(() => {
+    if (accountLogsEndRef.current) {
+      accountLogsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [accountLogs]);
+
   const handleSaveSeaceConfig = async () => {
     setSavingConfig(true);
     try {
-      await apiClient.put('/api/admin/alertas/seace-test', seaceConfig);
+      // Solo enviar la clave si el usuario quiere cambiarla y ha escrito algo
+      const configToSave = {
+        ...seaceConfig,
+        clave: wantsToChangeClave ? seaceConfig.clave : undefined,
+      };
+      await apiClient.put('/api/admin/alertas/seace-test', configToSave);
       setMessage({ type: 'success', text: 'Configuración SEACE guardada' });
+      // Si se guardó una nueva clave, actualizar el estado
+      if (wantsToChangeClave && seaceConfig.clave) {
+        setHasClaveConfigured(true);
+      }
+      setWantsToChangeClave(false);
+      setSeaceConfig(prev => ({ ...prev, clave: '' }));
+      // Cerrar el modal
+      setShowSeaceModal(false);
     } catch (error) {
       setMessage({ type: 'error', text: 'Error guardando configuración SEACE' });
     } finally {
@@ -620,9 +843,9 @@ export default function AdminAlertasPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setShowSeaceModal(true)} className="bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20">
+          <Button variant="outline" onClick={() => { setShowSeaceModal(true); loadSeaceAccounts(); }} className="bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20">
             <Key className="w-4 h-4 mr-2" />
-            SEACE Login
+            Cuentas SEACE
           </Button>
           <Button variant="outline" onClick={handleOpenScrapersModal}>
             <Globe className="w-4 h-4 mr-2" />
@@ -1482,15 +1705,15 @@ export default function AdminAlertasPage() {
         </div>
       )}
 
-      {/* Modal de Configuración SEACE Login */}
+      {/* Modal de Cuentas SEACE de Usuarios */}
       {showSeaceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <Key className="w-5 h-5 text-blue-500" />
-                  Configuración SEACE con Login
+                  Cuentas SEACE de Usuarios
                 </h2>
                 <button
                   onClick={() => setShowSeaceModal(false)}
@@ -1500,105 +1723,213 @@ export default function AdminAlertasPage() {
                 </button>
               </div>
 
+              {/* Estadísticas */}
+              {seaceAccountsStats && (
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{seaceAccountsStats.total}</p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">Total Configuradas</p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">{seaceAccountsStats.enabled}</p>
+                    <p className="text-xs text-green-700 dark:text-green-300">Habilitadas para Cron</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-gray-600 dark:text-gray-400">{seaceAccountsStats.disabled}</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300">Deshabilitadas</p>
+                  </div>
+                </div>
+              )}
+
               {/* Aviso */}
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
-                <p className="text-sm text-amber-800 dark:text-amber-200">
-                  <strong>Importante:</strong> Esta configuración permite acceder al portal SEACE con credenciales para obtener información detallada de licitaciones (cronogramas, fichas, etc).
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  Los usuarios configuran sus credenciales SEACE en su panel de configuración. Aquí puedes habilitar/deshabilitar qué cuentas se ejecutarán en el cron diario.
                 </p>
               </div>
 
-              {/* Formulario de credenciales */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Usuario SEACE
-                    </label>
-                    <Input
-                      value={seaceConfig.usuario}
-                      onChange={(e) => setSeaceConfig({ ...seaceConfig, usuario: e.target.value })}
-                      placeholder="Ingrese usuario"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Clave SEACE
-                    </label>
-                    <Input
-                      type="password"
-                      value={seaceConfig.clave}
-                      onChange={(e) => setSeaceConfig({ ...seaceConfig, clave: e.target.value })}
-                      placeholder="Ingrese clave"
-                    />
-                  </div>
+              {/* Lista de cuentas */}
+              {loadingSeaceAccounts ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Entidad a buscar
-                  </label>
-                  <Input
-                    value={seaceConfig.entidad}
-                    onChange={(e) => setSeaceConfig({ ...seaceConfig, entidad: e.target.value })}
-                    placeholder="Nombre completo de la entidad"
-                  />
+              ) : seaceAccounts.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  <Globe className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No hay usuarios con cuentas SEACE configuradas</p>
+                  <p className="text-sm mt-2">Los usuarios pueden configurar sus credenciales en Configuración &gt; SUNAT</p>
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  {seaceAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {account.razonSocial}
+                            </span>
+                            <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                              RUC: {account.ruc}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Usuario SEACE: <span className="font-mono">{account.usuarioSeace}</span>
+                          </div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                            Entidad: {account.siglaEntidadSeace || account.entidadSeace || 'No especificada'} | Año: {account.anioSeace || 'Actual'}
+                          </div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500">
+                            Propietario: {account.user.fullName || account.user.email}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRunScraperForAccount(account.id, account.razonSocial)}
+                            disabled={runningScraperForAccount === account.id}
+                            className="text-xs"
+                          >
+                            {runningScraperForAccount === account.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Ejecutando...
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3 mr-1" />
+                                Ejecutar
+                              </>
+                            )}
+                          </Button>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={account.seaceEnabled}
+                              onChange={(e) => handleToggleSeaceAccount(account.id, e.target.checked)}
+                              disabled={togglingAccount === account.id}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                            {togglingAccount === account.id && (
+                              <Loader2 className="w-4 h-4 animate-spin ml-2" />
+                            )}
+                          </label>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            account.seaceEnabled
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                          }`}>
+                            {account.seaceEnabled ? 'En Cron' : 'Deshabilitado'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Sigla de la entidad
-                    </label>
-                    <Input
-                      value={seaceConfig.siglaEntidad}
-                      onChange={(e) => setSeaceConfig({ ...seaceConfig, siglaEntidad: e.target.value })}
-                      placeholder="Ej: SUNAT"
-                    />
+              {/* Inline Console Logs */}
+              {showAccountLogs && (
+                <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-green-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Consola de ejecución
+                      </span>
+                      {accountSessionStatus === 'running' && (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/20 text-green-600 dark:text-green-400 rounded text-xs font-medium">
+                          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          En vivo
+                        </span>
+                      )}
+                      {accountSessionStatus === 'completed' && (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/20 text-green-600 dark:text-green-400 rounded text-xs font-medium">
+                          <CheckCircle className="w-3 h-3" />
+                          Completado
+                        </span>
+                      )}
+                      {accountSessionStatus === 'failed' && (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/20 text-red-600 dark:text-red-400 rounded text-xs font-medium">
+                          <AlertCircle className="w-3 h-3" />
+                          Error
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountLogs(false)}
+                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Año de búsqueda
-                    </label>
-                    <Input
-                      value={seaceConfig.anio}
-                      onChange={(e) => setSeaceConfig({ ...seaceConfig, anio: e.target.value })}
-                      placeholder="2025"
-                    />
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="seaceEnabled"
-                    checked={seaceConfig.enabled}
-                    onChange={(e) => setSeaceConfig({ ...seaceConfig, enabled: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  <label htmlFor="seaceEnabled" className="text-sm text-gray-700 dark:text-gray-300">
-                    Habilitar scraping automático con login
-                  </label>
-                </div>
-              </div>
+                  <div className="bg-gray-900 rounded-lg overflow-hidden">
+                    <div className="max-h-64 overflow-y-auto p-3 font-mono text-xs space-y-1">
+                      {accountLogs.length === 0 ? (
+                        <div className="flex items-center justify-center py-8 text-gray-500">
+                          <div className="text-center">
+                            <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                            <p>Esperando logs...</p>
+                          </div>
+                        </div>
+                      ) : (
+                        accountLogs.map((log) => {
+                          const levelStyles: Record<string, { text: string; icon: typeof Info }> = {
+                            info: { text: 'text-blue-400', icon: Info },
+                            success: { text: 'text-green-400', icon: CheckCircle },
+                            warning: { text: 'text-yellow-400', icon: AlertTriangle },
+                            error: { text: 'text-red-400', icon: AlertCircle },
+                            debug: { text: 'text-gray-400', icon: Bug },
+                          };
+                          const style = levelStyles[log.level] || levelStyles.info;
+                          const Icon = style.icon;
+                          const time = new Date(log.timestamp).toLocaleTimeString('es-PE', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          });
 
-              {/* Resultado del test */}
-              {seaceTestResult && (
-                <div className={`mt-4 p-4 rounded-lg ${
-                  seaceTestResult.success
-                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    {seaceTestResult.success ? (
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-red-500" />
-                    )}
-                    <span className={`font-medium ${
-                      seaceTestResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'
-                    }`}>
-                      {seaceTestResult.message}
-                    </span>
+                          return (
+                            <div
+                              key={log.id}
+                              className="flex items-start gap-2 px-2 py-1 rounded hover:bg-gray-800"
+                            >
+                              <Icon className={`w-3 h-3 mt-0.5 flex-shrink-0 ${style.text}`} />
+                              <span className="text-gray-500 flex-shrink-0">{time}</span>
+                              <span className="text-blue-400 flex-shrink-0">[{log.source}]</span>
+                              <span className="text-gray-200 break-words">{log.message}</span>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={accountLogsEndRef} />
+                    </div>
+                    <div className="px-3 py-2 bg-gray-800 border-t border-gray-700 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">
+                        {accountLogs.length} líneas
+                      </span>
+                      {accountSessionStatus !== 'running' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAccountLogs(false);
+                            setAccountLogs([]);
+                            setAccountSessionId(null);
+                            setAccountSessionStatus('idle');
+                          }}
+                          className="text-xs text-gray-400 hover:text-white"
+                        >
+                          Cerrar consola
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1607,33 +1938,24 @@ export default function AdminAlertasPage() {
               <div className="flex justify-between mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <Button
                   variant="outline"
-                  onClick={handleTestSeace}
-                  disabled={testingSeace || !seaceConfig.usuario || !seaceConfig.clave}
+                  onClick={loadSeaceAccounts}
+                  disabled={loadingSeaceAccounts}
                 >
-                  {testingSeace ? (
+                  {loadingSeaceAccounts ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Probando...
+                      Cargando...
                     </>
                   ) : (
                     <>
-                      <Play className="w-4 h-4 mr-2" />
-                      Probar Conexión
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Actualizar Lista
                     </>
                   )}
                 </Button>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={() => setShowSeaceModal(false)}>
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={handleSaveSeaceConfig}
-                    disabled={savingConfig}
-                  >
-                    {savingConfig ? 'Guardando...' : 'Guardar Configuración'}
-                  </Button>
-                </div>
+                <Button variant="outline" onClick={() => setShowSeaceModal(false)}>
+                  Cerrar
+                </Button>
               </div>
             </div>
           </div>

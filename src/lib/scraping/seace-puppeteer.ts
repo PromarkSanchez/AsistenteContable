@@ -1359,7 +1359,11 @@ function convertirAAlertas(procedimientos: SeaceProcedimiento[]): ExternalAlert[
 /**
  * Ejecuta el scraper de SEACE con Puppeteer
  */
-export async function runSeacePuppeteerScraper(force = false, sessionId?: string): Promise<ScraperResult> {
+export async function runSeacePuppeteerScraper(
+  force = false,
+  sessionId?: string,
+  customConfig?: SeaceConfig
+): Promise<ScraperResult> {
   const startTime = Date.now();
   let browser: Browser | null = null;
 
@@ -1370,7 +1374,8 @@ export async function runSeacePuppeteerScraper(force = false, sessionId?: string
   }
 
   try {
-    const config = await getSeaceConfig();
+    // Usar config personalizado si se proporciona, sino leer de DB
+    const config = customConfig || await getSeaceConfig();
 
     if (!config.enabled && !force) {
       log('info', 'Scraper deshabilitado');

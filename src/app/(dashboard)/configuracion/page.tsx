@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -21,10 +21,27 @@ import {
   Upload,
   CheckCircle,
   AlertCircle,
-  ClipboardList,
   Fingerprint,
   PenTool,
+  Globe,
+  Loader2,
+  Play,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  AlertTriangle,
+  Bug,
 } from 'lucide-react';
+
+// Log entry type for SEACE console
+interface SeaceLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'success' | 'warning' | 'error' | 'debug';
+  source: string;
+  message: string;
+}
 
 const credentialsSchema = z.object({
   usuarioSol: z.string().min(1, 'Usuario SOL requerido'),
@@ -49,6 +66,26 @@ export default function ConfiguracionPage() {
   const [pendingLogo, setPendingLogo] = useState<{ file: File; preview: string } | null>(null);
   const [isUploadingFirma, setIsUploadingFirma] = useState(false);
   const [isUploadingHuella, setIsUploadingHuella] = useState(false);
+
+  // SEACE config state
+  const [seaceConfig, setSeaceConfig] = useState({
+    usuarioSeace: '',
+    claveSeace: '',
+    entidadSeace: '',
+    siglaEntidadSeace: '',
+    anioSeace: new Date().getFullYear().toString(),
+    seaceEnabled: false,
+  });
+  const [hasSeaceCredentials, setHasSeaceCredentials] = useState(false);
+  const [isSavingSeace, setIsSavingSeace] = useState(false);
+  const [wantsToChangeSeaceClave, setWantsToChangeSeaceClave] = useState(false);
+  const [loadingSeaceConfig, setLoadingSeaceConfig] = useState(false);
+  const [runningSeaceScraper, setRunningSeaceScraper] = useState(false);
+  const [seaceSessionId, setSeaceSessionId] = useState<string | null>(null);
+  const [showSeaceLogs, setShowSeaceLogs] = useState(false);
+  const [seaceLogs, setSeaceLogs] = useState<SeaceLogEntry[]>([]);
+  const [seaceSessionStatus, setSeaceSessionStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
+  const seaceLogsEndRef = useRef<HTMLDivElement>(null);
 
   const {
     register,
@@ -250,6 +287,215 @@ export default function ConfiguracionPage() {
       setError(err instanceof Error ? err.message : 'Error al eliminar credenciales');
     }
   };
+
+  // SEACE functions
+  const loadSeaceConfig = async () => {
+    if (!selectedCompany) return;
+
+    try {
+      setLoadingSeaceConfig(true);
+      const data = await companiesApi.getSeaceConfig(selectedCompany.id);
+      if (data.config) {
+        setSeaceConfig({
+          usuarioSeace: data.config.usuarioSeace || '',
+          claveSeace: '',
+          entidadSeace: data.config.entidadSeace || '',
+          siglaEntidadSeace: data.config.siglaEntidadSeace || '',
+          anioSeace: data.config.anioSeace || new Date().getFullYear().toString(),
+          seaceEnabled: data.config.seaceEnabled,
+        });
+        setHasSeaceCredentials(data.config.hasClaveSeace);
+        setWantsToChangeSeaceClave(false);
+      }
+    } catch (err) {
+      console.error('Error cargando config SEACE:', err);
+    } finally {
+      setLoadingSeaceConfig(false);
+    }
+  };
+
+  const handleSaveSeaceConfig = async () => {
+    if (!selectedCompany) return;
+
+    try {
+      setIsSavingSeace(true);
+      setError(null);
+
+      // Enviar clave si: es primera vez (!hasSeaceCredentials) O si quiere cambiarla (wantsToChangeSeaceClave)
+      const shouldSendClave = (!hasSeaceCredentials || wantsToChangeSeaceClave) && seaceConfig.claveSeace;
+
+      const configToSave = {
+        usuarioSeace: seaceConfig.usuarioSeace,
+        entidadSeace: seaceConfig.entidadSeace,
+        siglaEntidadSeace: seaceConfig.siglaEntidadSeace,
+        anioSeace: seaceConfig.anioSeace,
+        seaceEnabled: seaceConfig.seaceEnabled,
+        ...(shouldSendClave ? { claveSeace: seaceConfig.claveSeace } : {}),
+      };
+
+      await companiesApi.updateSeaceCredentials(selectedCompany.id, configToSave);
+
+      if (shouldSendClave) {
+        setHasSeaceCredentials(true);
+      }
+      setWantsToChangeSeaceClave(false);
+      setSeaceConfig(prev => ({ ...prev, claveSeace: '' }));
+      setSuccess('Configuración SEACE guardada correctamente');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar configuración SEACE');
+    } finally {
+      setIsSavingSeace(false);
+    }
+  };
+
+  const handleRunSeaceScraper = async () => {
+    if (!selectedCompany) return;
+
+    try {
+      setRunningSeaceScraper(true);
+      setError(null);
+      setSeaceLogs([]);
+      setSeaceSessionStatus('running');
+
+      const result = await companiesApi.runSeaceScraper(selectedCompany.id);
+
+      if (result.success && result.sessionId) {
+        setSeaceSessionId(result.sessionId);
+        setShowSeaceLogs(true);
+      } else {
+        setError(result.message || 'Error al ejecutar el scraper');
+        setSeaceSessionStatus('failed');
+        setRunningSeaceScraper(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al ejecutar el scraper SEACE');
+      setSeaceSessionStatus('failed');
+      setRunningSeaceScraper(false);
+    }
+  };
+
+  // Polling de logs para SEACE
+  useEffect(() => {
+    if (!seaceSessionId || !showSeaceLogs || seaceSessionStatus !== 'running') {
+      return;
+    }
+
+    let isPollingActive = true;
+    let lastLogId = '';
+    let pollCount = 0;
+    const maxPolls = 300; // 5 minutos máximo
+
+    const pollLogs = async (): Promise<boolean> => {
+      if (!isPollingActive) return false;
+
+      try {
+        const response = await fetch(`/api/admin/alertas/scraper-logs?sessionId=${seaceSessionId}&action=history`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) return isPollingActive;
+
+        const data = await response.json();
+
+        if (data.logs && Array.isArray(data.logs)) {
+          const newLogs = data.logs.filter((log: SeaceLogEntry) => {
+            if (!lastLogId) return true;
+            return log.id > lastLogId;
+          });
+
+          if (newLogs.length > 0) {
+            setSeaceLogs(prev => {
+              const existingIds = new Set(prev.map(l => l.id));
+              const uniqueNew = newLogs.filter((l: SeaceLogEntry) => !existingIds.has(l.id));
+              return [...prev, ...uniqueNew];
+            });
+            lastLogId = data.logs[data.logs.length - 1]?.id || lastLogId;
+          }
+        }
+
+        // Verificar si la sesión terminó
+        if (data.session) {
+          if (data.session.status === 'completed') {
+            setSeaceSessionStatus('completed');
+            setRunningSeaceScraper(false);
+            return false;
+          } else if (data.session.status === 'failed') {
+            setSeaceSessionStatus('failed');
+            setRunningSeaceScraper(false);
+            return false;
+          }
+        }
+
+        return isPollingActive;
+      } catch (error) {
+        console.error('Error polling logs:', error);
+        return isPollingActive;
+      }
+    };
+
+    const intervalId = setInterval(async () => {
+      if (!isPollingActive) return;
+
+      pollCount++;
+      if (pollCount > maxPolls) {
+        isPollingActive = false;
+        setSeaceSessionStatus('failed');
+        setRunningSeaceScraper(false);
+        return;
+      }
+
+      const shouldContinue = await pollLogs();
+      if (!shouldContinue) {
+        isPollingActive = false;
+      }
+    }, 1000);
+
+    // Poll inmediatamente al inicio
+    pollLogs();
+
+    return () => {
+      isPollingActive = false;
+      clearInterval(intervalId);
+    };
+  }, [seaceSessionId, showSeaceLogs, seaceSessionStatus]);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (seaceLogsEndRef.current) {
+      seaceLogsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [seaceLogs]);
+
+  const handleDeleteSeaceCredentials = async () => {
+    if (!selectedCompany) return;
+
+    if (!confirm('¿Está seguro de eliminar las credenciales SEACE?')) return;
+
+    try {
+      setError(null);
+      await companiesApi.deleteSeaceCredentials(selectedCompany.id);
+      setHasSeaceCredentials(false);
+      setSeaceConfig({
+        usuarioSeace: '',
+        claveSeace: '',
+        entidadSeace: '',
+        siglaEntidadSeace: '',
+        anioSeace: new Date().getFullYear().toString(),
+        seaceEnabled: false,
+      });
+      setSuccess('Credenciales SEACE eliminadas correctamente');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar credenciales SEACE');
+    }
+  };
+
+  // Cargar config SEACE cuando se selecciona la pestaña SUNAT
+  useEffect(() => {
+    if (activeTab === 'sunat' && selectedCompany) {
+      loadSeaceConfig();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedCompany?.id]);
 
   const handleCertificateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -592,6 +838,7 @@ export default function ConfiguracionPage() {
 
       {/* Tab SUNAT */}
       {!isCreating && selectedCompany && activeTab === 'sunat' && (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -643,6 +890,256 @@ export default function ConfiguracionPage() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Card SEACE - al lado de SUNAT */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-blue-500" />
+              Credenciales SEACE
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingSeaceConfig ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Configura tus credenciales del portal SEACE para recibir alertas de licitaciones y procedimientos de selección.
+                </p>
+
+                {hasSeaceCredentials && (
+                  <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-green-700 dark:text-green-300 text-sm flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Credenciales SEACE configuradas (Usuario: {seaceConfig.usuarioSeace})
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Usuario SEACE"
+                    placeholder="Ingrese usuario"
+                    value={seaceConfig.usuarioSeace}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, usuarioSeace: e.target.value })}
+                  />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Clave SEACE
+                    </label>
+                    {hasSeaceCredentials && !wantsToChangeSeaceClave ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <span className="text-sm text-green-700 dark:text-green-300">Clave configurada</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setWantsToChangeSeaceClave(true)}
+                          className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                        >
+                          Cambiar clave
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          type="password"
+                          value={seaceConfig.claveSeace}
+                          onChange={(e) => setSeaceConfig({ ...seaceConfig, claveSeace: e.target.value })}
+                          placeholder={hasSeaceCredentials ? "Ingrese nueva clave" : "Ingrese clave"}
+                        />
+                        {hasSeaceCredentials && wantsToChangeSeaceClave && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWantsToChangeSeaceClave(false);
+                              setSeaceConfig(prev => ({ ...prev, claveSeace: '' }));
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 underline"
+                          >
+                            Cancelar cambio de clave
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Input
+                  label="Entidad a buscar"
+                  placeholder="SUPERINTENDENCIA NACIONAL DE ADUANAS Y DE ADMINISTRACION TRIBUTARIA - SUNAT"
+                  value={seaceConfig.entidadSeace}
+                  onChange={(e) => setSeaceConfig({ ...seaceConfig, entidadSeace: e.target.value })}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Sigla de la entidad"
+                    placeholder="Ej: SUNAT"
+                    value={seaceConfig.siglaEntidadSeace}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, siglaEntidadSeace: e.target.value })}
+                  />
+                  <Input
+                    label="Año de búsqueda"
+                    placeholder="2025"
+                    value={seaceConfig.anioSeace}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, anioSeace: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="seaceEnabled"
+                    checked={seaceConfig.seaceEnabled}
+                    onChange={(e) => setSeaceConfig({ ...seaceConfig, seaceEnabled: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                  <label htmlFor="seaceEnabled" className="text-sm text-gray-700 dark:text-gray-300">
+                    Habilitar alertas de licitaciones SEACE
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  {hasSeaceCredentials && (
+                    <>
+                      <Button type="button" variant="danger" onClick={handleDeleteSeaceCredentials}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Eliminar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleRunSeaceScraper}
+                        disabled={runningSeaceScraper}
+                      >
+                        {runningSeaceScraper ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Ejecutando...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 mr-2" />
+                            Ejecutar
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                  <Button onClick={handleSaveSeaceConfig} isLoading={isSavingSeace}>
+                    <Save className="w-4 h-4 mr-2" />
+                    Guardar Configuración SEACE
+                  </Button>
+                </div>
+
+                {/* Inline Console Logs */}
+                {showSeaceLogs && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-green-500" />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Consola de ejecución
+                        </span>
+                        {seaceSessionStatus === 'running' && (
+                          <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/20 text-green-600 dark:text-green-400 rounded text-xs font-medium">
+                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                            En vivo
+                          </span>
+                        )}
+                        {seaceSessionStatus === 'completed' && (
+                          <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/20 text-green-600 dark:text-green-400 rounded text-xs font-medium">
+                            <CheckCircle className="w-3 h-3" />
+                            Completado
+                          </span>
+                        )}
+                        {seaceSessionStatus === 'failed' && (
+                          <span className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/20 text-red-600 dark:text-red-400 rounded text-xs font-medium">
+                            <AlertCircle className="w-3 h-3" />
+                            Error
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowSeaceLogs(!showSeaceLogs)}
+                        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                      >
+                        {showSeaceLogs ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <div className="bg-gray-900 rounded-lg overflow-hidden">
+                      <div className="max-h-64 overflow-y-auto p-3 font-mono text-xs space-y-1">
+                        {seaceLogs.length === 0 ? (
+                          <div className="flex items-center justify-center py-8 text-gray-500">
+                            <div className="text-center">
+                              <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                              <p>Esperando logs...</p>
+                            </div>
+                          </div>
+                        ) : (
+                          seaceLogs.map((log) => {
+                            const levelStyles: Record<string, { text: string; icon: typeof Info }> = {
+                              info: { text: 'text-blue-400', icon: Info },
+                              success: { text: 'text-green-400', icon: CheckCircle },
+                              warning: { text: 'text-yellow-400', icon: AlertTriangle },
+                              error: { text: 'text-red-400', icon: AlertCircle },
+                              debug: { text: 'text-gray-400', icon: Bug },
+                            };
+                            const style = levelStyles[log.level] || levelStyles.info;
+                            const Icon = style.icon;
+                            const time = new Date(log.timestamp).toLocaleTimeString('es-PE', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            });
+
+                            return (
+                              <div
+                                key={log.id}
+                                className="flex items-start gap-2 px-2 py-1 rounded hover:bg-gray-800"
+                              >
+                                <Icon className={`w-3 h-3 mt-0.5 flex-shrink-0 ${style.text}`} />
+                                <span className="text-gray-500 flex-shrink-0">{time}</span>
+                                <span className="text-blue-400 flex-shrink-0">[{log.source}]</span>
+                                <span className="text-gray-200 break-words">{log.message}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                        <div ref={seaceLogsEndRef} />
+                      </div>
+                      <div className="px-3 py-2 bg-gray-800 border-t border-gray-700 flex items-center justify-between">
+                        <span className="text-xs text-gray-500">
+                          {seaceLogs.length} líneas
+                        </span>
+                        {seaceSessionStatus !== 'running' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowSeaceLogs(false);
+                              setSeaceLogs([]);
+                              setSeaceSessionId(null);
+                              setSeaceSessionStatus('idle');
+                            }}
+                            className="text-xs text-gray-400 hover:text-white"
+                          >
+                            Cerrar consola
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        </>
       )}
 
       {/* Tab Facturación */}
@@ -883,6 +1380,7 @@ export default function ConfiguracionPage() {
           </CardContent>
         </Card>
       )}
+
     </div>
   );
 }
