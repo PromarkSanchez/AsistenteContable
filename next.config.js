@@ -1,8 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Habilitar serverComponentsExternalPackages para Prisma y xml-crypto
+  // Habilitar serverComponentsExternalPackages para Prisma, xml-crypto y Puppeteer
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', 'xml-crypto'],
+    serverComponentsExternalPackages: [
+      '@prisma/client',
+      'xml-crypto',
+      'puppeteer-core',
+      '@sparticuz/chromium',
+    ],
   },
 
   // Headers de seguridad

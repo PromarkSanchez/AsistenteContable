@@ -29,6 +29,7 @@ import {
   BookOpen,
   Bell,
   Bot,
+  Camera,
   LucideIcon,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -49,6 +50,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Bell,
   Bot,
   Building2,
+  Camera,
 };
 
 // Menús por defecto (fallback si no hay configuración)

@@ -4,16 +4,18 @@ const prisma = new PrismaClient();
 
 // Menús base del sistema
 const MENUS_BASE = [
-  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard', orden: 1 },
+  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/', orden: 1 },
   { key: 'comprobantes', label: 'Comprobantes', icon: 'FileText', path: '/comprobantes', orden: 2 },
   { key: 'importar', label: 'Importar', icon: 'Upload', path: '/importar', orden: 3 },
   { key: 'terceros', label: 'Terceros', icon: 'Users', path: '/terceros', orden: 4 },
-  { key: 'declaraciones', label: 'Declaraciones', icon: 'Calculator', path: '/declaraciones', orden: 5 },
-  { key: 'facturacion', label: 'Facturación', icon: 'Receipt', path: '/facturacion', orden: 6 },
-  { key: 'reportes', label: 'Reportes', icon: 'BarChart3', path: '/reportes', orden: 7 },
-  { key: 'libros', label: 'Libros Electrónicos', icon: 'BookOpen', path: '/libros', orden: 8 },
-  { key: 'alertas', label: 'Alertas', icon: 'Bell', path: '/alertas', orden: 9 },
-  { key: 'asistente', label: 'Asistente IA', icon: 'Bot', path: '/asistente', orden: 10 },
+  { key: 'inventario', label: 'Inventario', icon: 'Package', path: '/inventario', orden: 5 },
+  { key: 'fotochecks', label: 'Fotochecks', icon: 'Camera', path: '/fotochecks', orden: 6 },
+  { key: 'declaraciones', label: 'Declaraciones', icon: 'Calculator', path: '/declaraciones', orden: 7 },
+  { key: 'facturador', label: 'Facturador', icon: 'Receipt', path: '/facturador', orden: 8 },
+  { key: 'reportes', label: 'Reportes', icon: 'BarChart3', path: '/reportes', orden: 9 },
+  { key: 'libros', label: 'Libros Electrónicos', icon: 'BookOpen', path: '/libros', orden: 10 },
+  { key: 'alertas', label: 'Alertas', icon: 'Bell', path: '/alertas', orden: 11 },
+  { key: 'asistente', label: 'Asistente IA', icon: 'Bot', path: '/asistente', orden: 12 },
   { key: 'configuracion', label: 'Configuración', icon: 'Settings', path: '/configuracion', orden: 99 },
 ];
 
@@ -59,7 +61,7 @@ const PLAN_CONFIGS = [
     alertasEnabled: true,
     apiAccess: false,
     soportePrioritario: false,
-    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'declaraciones', 'facturacion', 'alertas', 'asistente', 'configuracion'],
+    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'inventario', 'fotochecks', 'declaraciones', 'facturador', 'alertas', 'asistente', 'configuracion'],
   },
   {
     plan: 'PRO' as const,
@@ -80,7 +82,7 @@ const PLAN_CONFIGS = [
     alertasEnabled: true,
     apiAccess: true,
     soportePrioritario: true,
-    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'declaraciones', 'facturacion', 'reportes', 'libros', 'alertas', 'asistente', 'configuracion'],
+    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'inventario', 'fotochecks', 'declaraciones', 'facturador', 'reportes', 'libros', 'alertas', 'asistente', 'configuracion'],
   },
 ];
 
@@ -140,7 +142,16 @@ async function seedPlans() {
       console.log(`  ✓ Plan ${planData.plan} creado`);
     }
 
-    // Crear menús para el plan
+    // Eliminar menús antiguos que ya no existen en MENUS_BASE
+    const validMenuKeys = MENUS_BASE.map(m => m.key);
+    await prisma.planMenuItem.deleteMany({
+      where: {
+        planConfigId: planRecord.id,
+        menuKey: { notIn: validMenuKeys },
+      },
+    });
+
+    // Crear/actualizar menús para el plan
     for (const menu of MENUS_BASE) {
       const isEnabled = menusHabilitados.includes(menu.key);
 
@@ -171,7 +182,7 @@ async function seedPlans() {
         },
       });
     }
-    console.log(`  ✓ Menús configurados para ${planData.plan}`);
+    console.log(`  ✓ Menús configurados para ${planData.plan} (${MENUS_BASE.length} menús)`);
   }
 
   // Crear proveedores de IA

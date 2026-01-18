@@ -4,9 +4,11 @@
  */
 
 import puppeteer, { Browser, Page } from 'puppeteer-core';
-// @ts-ignore - chromium doesn't have types
-import chromium from 'chromium';
+import chromium from '@sparticuz/chromium';
 import prisma from '@/lib/prisma';
+
+// Detectar si estamos en Vercel/AWS Lambda
+const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 import { processScrapedAlerts, ScraperResult, logScraperRun } from './index';
 import type { ExternalAlert } from '@/lib/alert-sources';
 import { createSessionLogger, addLog } from './scraper-logger';
@@ -145,20 +147,15 @@ export async function saveSeaceConfig(config: Partial<SeaceConfig>): Promise<voi
 }
 
 /**
- * Busca el ejecutable de Chrome en el sistema
+ * Busca el path de Chrome localmente (para desarrollo)
  */
-function findChromePath(): string | undefined {
+function findLocalChromePath(): string | undefined {
   // 1. Variable de entorno
   if (process.env.CHROME_PATH) {
     return process.env.CHROME_PATH;
   }
 
-  // 2. Chromium package
-  if (chromium.path) {
-    return chromium.path;
-  }
-
-  // 3. Rutas comunes en Windows
+  // 2. Rutas comunes en Windows
   if (process.platform === 'win32') {
     const fs = require('fs');
     const windowsPaths = [
@@ -176,7 +173,7 @@ function findChromePath(): string | undefined {
     }
   }
 
-  // 4. Rutas en macOS
+  // 3. Rutas en macOS
   if (process.platform === 'darwin') {
     const fs = require('fs');
     const macPaths = [
@@ -191,7 +188,7 @@ function findChromePath(): string | undefined {
     }
   }
 
-  // 5. Rutas en Linux
+  // 4. Rutas en Linux
   if (process.platform === 'linux') {
     const fs = require('fs');
     const linuxPaths = [
@@ -211,31 +208,48 @@ function findChromePath(): string | undefined {
 }
 
 /**
- * Inicia el navegador
+ * Inicia el navegador (compatible con Vercel y desarrollo local)
  */
 async function launchBrowser(): Promise<Browser> {
-  const executablePath = findChromePath();
+  log('info', 'Iniciando navegador...');
+  log('info', `Entorno: ${isServerless ? 'Serverless (Vercel)' : 'Local'}`);
 
-  log('info', ' Iniciando navegador...');
-  log('info', ' Chrome path:', executablePath);
+  if (isServerless) {
+    // En Vercel/AWS Lambda: usar @sparticuz/chromium
+    log('info', 'Usando @sparticuz/chromium para entorno serverless');
 
-  if (!executablePath) {
-    throw new Error(
-      'No se encontró Chrome instalado. Por favor instale Google Chrome o configure la variable de entorno CHROME_PATH.'
-    );
+    const executablePath = await chromium.executablePath();
+    log('info', `Chromium path: ${executablePath}`);
+
+    return puppeteer.launch({
+      executablePath,
+      headless: chromium.headless,
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+    });
+  } else {
+    // En desarrollo local: usar Chrome instalado
+    const executablePath = findLocalChromePath();
+    log('info', `Chrome path: ${executablePath}`);
+
+    if (!executablePath) {
+      throw new Error(
+        'No se encontró Chrome instalado. Por favor instale Google Chrome o configure la variable de entorno CHROME_PATH.'
+      );
+    }
+
+    return puppeteer.launch({
+      executablePath,
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+      ],
+    });
   }
-
-  return puppeteer.launch({
-    executablePath,
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process',
-    ],
-  });
 }
 
 /**

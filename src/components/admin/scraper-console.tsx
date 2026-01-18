@@ -93,11 +93,10 @@ export function ScraperConsole({ sessionId, isOpen, onClose, onSessionEnd }: Scr
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           console.error('[Console] Error fetching logs:', response.status, errorData);
-          return isPollingActive; // Continuar intentando solo si sigue activo
+          return isPollingActive;
         }
 
         const data = await response.json();
-        console.log('[Console] Response:', { sessionStatus: data.session?.status, logsCount: data.logs?.length });
 
         if (data.logs && Array.isArray(data.logs)) {
           // Filtrar logs nuevos
@@ -146,17 +145,28 @@ export function ScraperConsole({ sessionId, isOpen, onClose, onSessionEnd }: Scr
     };
 
     // Hacer polling cada segundo
-    const intervalId = setInterval(async () => {
-      if (!isPollingActive) {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const stopPolling = () => {
+      isPollingActive = false;
+      if (intervalId) {
         clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    intervalId = setInterval(async () => {
+      // Double-check we should still be polling
+      if (!isPollingActive || hasEndedRef.current) {
+        console.log('[Console] Interval: stopping because inactive or ended');
+        stopPolling();
         return;
       }
 
       pollCount++;
       if (pollCount > maxPolls) {
         console.log('[Console] Max polls reached, stopping');
-        isPollingActive = false;
-        clearInterval(intervalId);
+        stopPolling();
         setIsConnected(false);
         return;
       }
@@ -164,7 +174,7 @@ export function ScraperConsole({ sessionId, isOpen, onClose, onSessionEnd }: Scr
       const shouldContinue = await pollLogs();
       if (!shouldContinue) {
         console.log('[Console] Polling stopped by pollLogs');
-        clearInterval(intervalId);
+        stopPolling();
       }
     }, 1000);
 
@@ -173,8 +183,7 @@ export function ScraperConsole({ sessionId, isOpen, onClose, onSessionEnd }: Scr
 
     return () => {
       console.log('[Console] Cleanup - stopping polling');
-      isPollingActive = false;
-      clearInterval(intervalId);
+      stopPolling();
     };
   }, [sessionId, isOpen]); // Removed onSessionEnd from dependencies!
 

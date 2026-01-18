@@ -4,5 +4,15 @@
       "path": "/api/alertas/sync",
       "schedule": "0 6 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/admin/alertas/scrapers/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "src/app/api/admin/alertas/seace-test/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    }
+  }
 }
