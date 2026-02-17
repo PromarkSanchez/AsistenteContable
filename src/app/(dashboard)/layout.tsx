@@ -213,12 +213,12 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed top-0 left-0 z-50 h-full w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform lg:translate-x-0',
+          'fixed top-0 left-0 z-50 h-full w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform lg:translate-x-0 flex flex-col',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="shrink-0 flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
           <Link href="/" className="flex items-center space-x-2">
             {logoBase64 ? (
               <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-white">
@@ -241,7 +241,7 @@ export default function DashboardLayout({
 
         {/* Company selector */}
         {companies.length > 0 && (
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="shrink-0 p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="relative">
               <button
                 onClick={() => setCompanyDropdownOpen(!companyDropdownOpen)}
@@ -302,7 +302,7 @@ export default function DashboardLayout({
         )}
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin">
           {filteredMenuItems.map((item) => (
             <Link
               key={item.key || item.href}
@@ -349,7 +349,7 @@ export default function DashboardLayout({
         </nav>
 
         {/* User section */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="shrink-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 truncate">
               <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
