@@ -32,7 +32,9 @@ import {
   Info,
   AlertTriangle,
   Bug,
+  Users,
 } from 'lucide-react';
+import CompanyMembers from '@/components/dashboard/company-members';
 
 // Log entry type for SEACE console
 interface SeaceLogEntry {
@@ -52,7 +54,7 @@ type CredentialsInput = z.infer<typeof credentialsSchema>;
 
 export default function ConfiguracionPage() {
   const { selectedCompany, companies, addCompany, updateCompany } = useCompanyStore();
-  const [activeTab, setActiveTab] = useState<'general' | 'sunat' | 'facturacion' | 'inventario'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'sunat' | 'facturacion' | 'inventario' | 'miembros'>('general');
   const [isCreating, setIsCreating] = useState(!selectedCompany);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -629,6 +631,7 @@ export default function ConfiguracionPage() {
     { id: 'sunat', label: 'SUNAT', icon: Key },
     { id: 'facturacion', label: 'Facturación', icon: FileKey },
     { id: 'inventario', label: 'Firmas y Sellos', icon: PenTool },
+    { id: 'miembros', label: 'Miembros', icon: Users },
   ];
 
   return (
@@ -1379,6 +1382,14 @@ export default function ConfiguracionPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Tab Miembros */}
+      {!isCreating && selectedCompany && activeTab === 'miembros' && (
+        <CompanyMembers
+          companyId={selectedCompany.id}
+          myRole={(selectedCompany as any).myRole || 'OWNER'}
+        />
       )}
 
     </div>

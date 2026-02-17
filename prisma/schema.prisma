@@ -60,6 +60,13 @@ enum UploadStatus {
   FAILED
 }
 
+enum CompanyRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  VIEWER
+}
+
 // ==================== USUARIOS ====================
 
 model User {
@@ -74,7 +81,8 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  companies Company[]
+  companies         Company[]
+  companyMemberships CompanyMember[]
 
   @@map("users")
 }
@@ -134,9 +142,27 @@ model Company {
   uploadHistory InvoiceUploadHistory[]
   storageUsage  StorageUsage?
   inventarios   Inventario[]
+  members       CompanyMember[]
 
   @@index([userId])
   @@map("companies")
+}
+
+// ==================== MIEMBROS DE EMPRESA ====================
+
+model CompanyMember {
+  id        String      @id @default(uuid()) @db.Uuid
+  companyId String      @map("company_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  role      CompanyRole @default(VIEWER)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@map("company_members")
 }
 
 // ==================== COMPROBANTES ====================

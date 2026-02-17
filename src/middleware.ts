@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
+import { verifyAccessToken, verifyRefreshToken, createTokens, extractTokenFromHeader, JWT_EXPIRES_IN, REFRESH_TOKEN_EXPIRES_IN, parseTimeToSeconds } from '@/lib/jwt';
 
 // Rutas públicas
 const publicPaths = ['/login', '/register'];
@@ -8,51 +8,68 @@ const publicApiPaths = [
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/refresh',
+  '/api/auth/logout',
   '/api/branding',
-  '/api/admin/alertas/scraper-logs', // El sessionId actúa como token de acceso
+  '/api/admin/alertas/scraper-logs',
 ];
 
-// Helper para eliminar cookie y redirigir a login
-function redirectToLoginWithClearCookie(request: NextRequest) {
-  const response = NextResponse.redirect(new URL('/login', request.url));
-  // Eliminar la cookie expirada/inválida
-  response.cookies.set('contador-auth', '', {
-    path: '/',
-    expires: new Date(0),
-    httpOnly: false,
+// Opciones de cookies
+function cookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-  });
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge,
+  };
+}
+
+// Helper para limpiar cookies y redirigir a login
+function redirectToLoginWithClearCookies(request: NextRequest) {
+  const response = NextResponse.redirect(new URL('/login', request.url));
+  response.cookies.set('contador-auth', '', { ...cookieOptions(0) });
+  response.cookies.set('contador-refresh', '', { ...cookieOptions(0) });
   return response;
+}
+
+// Helper para refrescar tokens usando el refresh token cookie
+async function tryRefreshFromCookie(request: NextRequest): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const refreshCookie = request.cookies.get('contador-refresh');
+  if (!refreshCookie?.value) return null;
+
+  const payload = await verifyRefreshToken(refreshCookie.value);
+  if (!payload) return null;
+
+  // Crear nuevos tokens directamente (sin llamar al API para evitar loops)
+  const tokens = await createTokens(payload.sub, payload.email);
+  return tokens;
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Log para debug
-  console.log('Middleware - Path:', pathname);
-
   // Rutas públicas de páginas
   if (publicPaths.includes(pathname)) {
-    // Si el usuario ya está autenticado, redirigir al dashboard
     const sessionCookie = request.cookies.get('contador-auth');
     if (sessionCookie?.value) {
-      // Verificar que el token sea válido antes de redirigir
       const payload = await verifyAccessToken(sessionCookie.value);
       if (payload) {
-        console.log('Middleware - Usuario autenticado intentando acceder a ruta pública, redirigiendo a dashboard');
         return NextResponse.redirect(new URL('/', request.url));
       }
-      // Token inválido, permitir acceso a login y limpiar cookie
-      console.log('Middleware - Token inválido, limpiando cookie');
+      // Token expirado, intentar refresh antes de mostrar login
+      const tokens = await tryRefreshFromCookie(request);
+      if (tokens) {
+        const response = NextResponse.redirect(new URL('/', request.url));
+        response.cookies.set('contador-auth', tokens.accessToken, cookieOptions(parseTimeToSeconds(JWT_EXPIRES_IN)));
+        response.cookies.set('contador-refresh', tokens.refreshToken, cookieOptions(parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN)));
+        return response;
+      }
+      // Refresh también falló, limpiar cookies y mostrar login
       const response = NextResponse.next();
-      response.cookies.set('contador-auth', '', {
-        path: '/',
-        expires: new Date(0),
-      });
+      response.cookies.set('contador-auth', '', cookieOptions(0));
+      response.cookies.set('contador-refresh', '', cookieOptions(0));
       return response;
     }
-    console.log('Middleware - Ruta pública, permitiendo');
     return NextResponse.next();
   }
 
@@ -63,15 +80,40 @@ export async function middleware(request: NextRequest) {
 
   // Para rutas de API protegidas
   if (pathname.startsWith('/api/')) {
+    // Intentar Authorization header primero, luego cookie como fallback
     const authHeader = request.headers.get('authorization');
-    const token = extractTokenFromHeader(authHeader);
+    let token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
+      const sessionCookie = request.cookies.get('contador-auth');
+      token = sessionCookie?.value || null;
+    }
 
     if (!token) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
-    const payload = await verifyAccessToken(token);
+    let payload = await verifyAccessToken(token);
+
+    // Si el token expiró, intentar refresh automático
     if (!payload) {
+      const tokens = await tryRefreshFromCookie(request);
+      if (tokens) {
+        payload = await verifyAccessToken(tokens.accessToken);
+        if (payload) {
+          const requestHeaders = new Headers(request.headers);
+          requestHeaders.set('x-user-id', payload.sub);
+          requestHeaders.set('x-user-email', payload.email);
+
+          const response = NextResponse.next({
+            request: { headers: requestHeaders },
+          });
+          // Actualizar cookies con nuevos tokens
+          response.cookies.set('contador-auth', tokens.accessToken, cookieOptions(parseTimeToSeconds(JWT_EXPIRES_IN)));
+          response.cookies.set('contador-refresh', tokens.refreshToken, cookieOptions(parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN)));
+          return response;
+        }
+      }
       return NextResponse.json({ error: 'Token inválido o expirado' }, { status: 401 });
     }
 
@@ -86,21 +128,33 @@ export async function middleware(request: NextRequest) {
 
   // Para páginas protegidas (dashboard, admin, etc.)
   const sessionCookie = request.cookies.get('contador-auth');
-  console.log('Middleware - Cookie:', sessionCookie?.value ? 'EXISTE' : 'NO EXISTE');
 
   if (!sessionCookie?.value) {
-    console.log('Middleware - No hay cookie, redirigiendo a login');
+    // No hay cookie de acceso, intentar refresh
+    const tokens = await tryRefreshFromCookie(request);
+    if (tokens) {
+      const response = NextResponse.next();
+      response.cookies.set('contador-auth', tokens.accessToken, cookieOptions(parseTimeToSeconds(JWT_EXPIRES_IN)));
+      response.cookies.set('contador-refresh', tokens.refreshToken, cookieOptions(parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN)));
+      return response;
+    }
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // Verificar que el token de la cookie sea válido
   const payload = await verifyAccessToken(sessionCookie.value);
   if (!payload) {
-    console.log('Middleware - Token expirado o inválido, redirigiendo a login');
-    return redirectToLoginWithClearCookie(request);
+    // Token expirado, intentar refresh automático
+    const tokens = await tryRefreshFromCookie(request);
+    if (tokens) {
+      const response = NextResponse.next();
+      response.cookies.set('contador-auth', tokens.accessToken, cookieOptions(parseTimeToSeconds(JWT_EXPIRES_IN)));
+      response.cookies.set('contador-refresh', tokens.refreshToken, cookieOptions(parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN)));
+      return response;
+    }
+    return redirectToLoginWithClearCookies(request);
   }
 
-  console.log('Middleware - Token válido, permitiendo acceso');
   return NextResponse.next();
 }
 
@@ -114,6 +168,14 @@ export const config = {
     '/inventario/:path*',
     '/configuracion/:path*',
     '/admin/:path*',
+    '/alertas/:path*',
+    '/terceros/:path*',
+    '/flujo-caja/:path*',
+    '/fotochecks/:path*',
+    '/renombrar-imagenes/:path*',
+    '/reportes/:path*',
+    '/libros/:path*',
+    '/asistente/:path*',
     '/login',
     '/register',
     '/api/:path*',

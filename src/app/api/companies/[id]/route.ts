@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { companyUpdateSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
+import { requireCompanyAccess, isAccessError, READ_ROLES, MANAGE_ROLES, OWNER_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string };
@@ -10,32 +11,15 @@ interface RouteParams {
 // GET /api/companies/[id] - Obtener empresa por ID
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id } = params;
+    const access = await requireCompanyAccess(request, id, READ_ROLES);
+    if (isAccessError(access)) return access;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: {
-        id,
-        userId, // Solo empresas del usuario
-      },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const company = access.company as any;
 
     return NextResponse.json({
       ...company,
+      myRole: access.role,
       hasCredentials: !!company.usuarioSol,
       hasCertificado: !!company.certificadoDigital,
       claveSolEncrypted: undefined,
@@ -51,30 +35,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT /api/companies/[id] - Actualizar empresa
+// PUT /api/companies/[id] - Actualizar empresa (solo OWNER/ADMIN)
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id } = params;
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const existingCompany = await prisma.company.findFirst({
-      where: { id, userId },
-    });
-
-    if (!existingCompany) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     const body = await request.json();
     const validatedData = companyUpdateSchema.parse(body);
@@ -105,6 +71,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       ...company,
+      myRole: access.role,
       hasCredentials: !!company.usuarioSol,
       hasCertificado: !!company.certificadoDigital,
       claveSolEncrypted: undefined,
@@ -128,32 +95,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/companies/[id] - Eliminar empresa
+// DELETE /api/companies/[id] - Eliminar empresa (solo OWNER)
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id } = params;
+    const access = await requireCompanyAccess(request, id, OWNER_ROLES);
+    if (isAccessError(access)) return access;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const existingCompany = await prisma.company.findFirst({
-      where: { id, userId },
-    });
-
-    if (!existingCompany) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
-
-    // Eliminar empresa (cascada eliminará comprobantes, declaraciones, etc.)
+    // Eliminar empresa (cascada eliminará comprobantes, declaraciones, miembros, etc.)
     await prisma.company.delete({
       where: { id },
     });

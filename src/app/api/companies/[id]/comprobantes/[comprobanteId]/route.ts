@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { comprobanteUpdateSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
+import { requireCompanyAccess, isAccessError, READ_ROLES, WRITE_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string; comprobanteId: string };
@@ -10,27 +11,10 @@ interface RouteParams {
 // GET /api/companies/[id]/comprobantes/[comprobanteId]
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, comprobanteId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, READ_ROLES);
+    if (isAccessError(access)) return access;
 
     const comprobante = await prisma.comprobante.findFirst({
       where: { id: comprobanteId, companyId },
@@ -79,26 +63,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PUT /api/companies/[id]/comprobantes/[comprobanteId]
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, comprobanteId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, WRITE_ROLES);
+    if (isAccessError(access)) return access;
 
     const existingComprobante = await prisma.comprobante.findFirst({
       where: { id: comprobanteId, companyId },
@@ -210,26 +178,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/companies/[id]/comprobantes/[comprobanteId]
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, comprobanteId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, WRITE_ROLES);
+    if (isAccessError(access)) return access;
 
     const comprobante = await prisma.comprobante.findFirst({
       where: { id: comprobanteId, companyId },

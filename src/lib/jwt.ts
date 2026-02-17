@@ -1,11 +1,15 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30m';
-const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.warn('WARNING: JWT_SECRET no está configurado. Usando valor por defecto inseguro.');
+}
+const JWT_SECRET_VALUE = JWT_SECRET || 'dev-only-secret-do-not-use-in-production';
+export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30m';
+export const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 
 // Convierte string de tiempo a segundos
-function parseTimeToSeconds(time: string): number {
+export function parseTimeToSeconds(time: string): number {
   const match = time.match(/^(\d+)([smhd])$/);
   if (!match) return 30 * 60; // default 30 minutos
 
@@ -34,7 +38,7 @@ export interface TokenPayload extends JWTPayload {
 
 // Crear Access Token
 export async function createAccessToken(userId: string, email: string): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
+  const secret = new TextEncoder().encode(JWT_SECRET_VALUE);
   const expiresIn = parseTimeToSeconds(JWT_EXPIRES_IN);
 
   const token = await new SignJWT({
@@ -52,7 +56,7 @@ export async function createAccessToken(userId: string, email: string): Promise<
 
 // Crear Refresh Token
 export async function createRefreshToken(userId: string, email: string): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
+  const secret = new TextEncoder().encode(JWT_SECRET_VALUE);
   const expiresIn = parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN);
 
   const token = await new SignJWT({
@@ -85,7 +89,7 @@ export async function createTokens(userId: string, email: string) {
 // Verificar token
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
   try {
-    const secret = new TextEncoder().encode(JWT_SECRET);
+    const secret = new TextEncoder().encode(JWT_SECRET_VALUE);
     const { payload } = await jwtVerify(token, secret);
     return payload as TokenPayload;
   } catch {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireCompanyAccess, isAccessError, READ_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string };
@@ -8,19 +9,14 @@ interface RouteParams {
 // GET /api/companies/[id]/storage - Obtener uso de almacenamiento
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, READ_ROLES);
+    if (isAccessError(access)) return access;
 
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
+    // Obtener datos de la empresa necesarios para el cálculo
+    const companyData = await prisma.company.findUnique({
+      where: { id: companyId },
       select: {
         id: true,
         logoBase64: true,
@@ -28,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!company) {
+    if (!companyData) {
       return NextResponse.json(
         { error: 'Empresa no encontrada' },
         { status: 404 }
@@ -41,9 +37,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     // Recalcular uso actual
-    const logosSize = company.logoBase64 ? Buffer.byteLength(company.logoBase64, 'utf8') : 0;
-    const certificatesSize = company.certificadoDigital
-      ? Buffer.byteLength(company.certificadoDigital, 'utf8')
+    const logosSize = companyData.logoBase64 ? Buffer.byteLength(companyData.logoBase64, 'utf8') : 0;
+    const certificatesSize = companyData.certificadoDigital
+      ? Buffer.byteLength(companyData.certificadoDigital, 'utf8')
       : 0;
 
     // Calcular tamaño de XMLs firmados en comprobantes

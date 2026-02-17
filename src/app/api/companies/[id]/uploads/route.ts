@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireCompanyAccess, isAccessError, READ_ROLES, MANAGE_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string };
@@ -8,27 +9,10 @@ interface RouteParams {
 // GET /api/companies/[id]/uploads - Obtener historial de subidas
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, READ_ROLES);
+    if (isAccessError(access)) return access;
 
     // Parámetros de paginación
     const { searchParams } = new URL(request.url);
@@ -71,26 +55,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/companies/[id]/uploads - Limpiar historial antiguo
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     // Obtener parámetro de días (default 30)
     const { searchParams } = new URL(request.url);

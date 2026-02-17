@@ -8,14 +8,16 @@ const MENUS_BASE = [
   { key: 'comprobantes', label: 'Comprobantes', icon: 'FileText', path: '/comprobantes', orden: 2 },
   { key: 'importar', label: 'Importar', icon: 'Upload', path: '/importar', orden: 3 },
   { key: 'terceros', label: 'Terceros', icon: 'Users', path: '/terceros', orden: 4 },
-  { key: 'inventario', label: 'Inventario', icon: 'Package', path: '/inventario', orden: 5 },
-  { key: 'fotochecks', label: 'Fotochecks', icon: 'Camera', path: '/fotochecks', orden: 6 },
-  { key: 'declaraciones', label: 'Declaraciones', icon: 'Calculator', path: '/declaraciones', orden: 7 },
-  { key: 'facturador', label: 'Facturador', icon: 'Receipt', path: '/facturador', orden: 8 },
-  { key: 'reportes', label: 'Reportes', icon: 'BarChart3', path: '/reportes', orden: 9 },
-  { key: 'libros', label: 'Libros Electrónicos', icon: 'BookOpen', path: '/libros', orden: 10 },
-  { key: 'alertas', label: 'Alertas', icon: 'Bell', path: '/alertas', orden: 11 },
-  { key: 'asistente', label: 'Asistente IA', icon: 'Bot', path: '/asistente', orden: 12 },
+  { key: 'flujo-caja', label: 'Flujo de Caja', icon: 'Wallet', path: '/flujo-caja', orden: 5 },
+  { key: 'inventario', label: 'Inventario', icon: 'Package', path: '/inventario', orden: 6 },
+  { key: 'fotochecks', label: 'Fotochecks', icon: 'Camera', path: '/fotochecks', orden: 7 },
+  { key: 'renombrar-imagenes', label: 'Renombrar Imágenes', icon: 'ScanLine', path: '/renombrar-imagenes', orden: 8 },
+  { key: 'declaraciones', label: 'Declaraciones', icon: 'Calculator', path: '/declaraciones', orden: 9 },
+  { key: 'facturador', label: 'Facturador', icon: 'Receipt', path: '/facturador', orden: 10 },
+  { key: 'reportes', label: 'Reportes', icon: 'BarChart3', path: '/reportes', orden: 11 },
+  { key: 'libros', label: 'Libros Electrónicos', icon: 'BookOpen', path: '/libros', orden: 12 },
+  { key: 'alertas', label: 'Alertas', icon: 'Bell', path: '/alertas', orden: 13 },
+  { key: 'asistente', label: 'Asistente IA', icon: 'Bot', path: '/asistente', orden: 14 },
   { key: 'configuracion', label: 'Configuración', icon: 'Settings', path: '/configuracion', orden: 99 },
 ];
 
@@ -40,7 +42,7 @@ const PLAN_CONFIGS = [
     alertasEnabled: false,
     apiAccess: false,
     soportePrioritario: false,
-    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'configuracion'],
+    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'renombrar-imagenes', 'configuracion'],
   },
   {
     plan: 'BASIC' as const,
@@ -61,7 +63,7 @@ const PLAN_CONFIGS = [
     alertasEnabled: true,
     apiAccess: false,
     soportePrioritario: false,
-    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'inventario', 'fotochecks', 'declaraciones', 'facturador', 'alertas', 'asistente', 'configuracion'],
+    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'flujo-caja', 'inventario', 'fotochecks', 'renombrar-imagenes', 'declaraciones', 'facturador', 'alertas', 'asistente', 'configuracion'],
   },
   {
     plan: 'PRO' as const,
@@ -82,7 +84,7 @@ const PLAN_CONFIGS = [
     alertasEnabled: true,
     apiAccess: true,
     soportePrioritario: true,
-    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'inventario', 'fotochecks', 'declaraciones', 'facturador', 'reportes', 'libros', 'alertas', 'asistente', 'configuracion'],
+    menusHabilitados: ['dashboard', 'comprobantes', 'importar', 'terceros', 'flujo-caja', 'inventario', 'fotochecks', 'renombrar-imagenes', 'declaraciones', 'facturador', 'reportes', 'libros', 'alertas', 'asistente', 'configuracion'],
   },
 ];
 

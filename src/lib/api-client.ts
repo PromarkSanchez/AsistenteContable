@@ -10,12 +10,14 @@ interface FetchOptions extends RequestInit {
 
 class ApiClient {
   private baseUrl: string;
+  private isRefreshing = false;
+  private refreshPromise: Promise<boolean> | null = null;
 
   constructor(baseUrl: string = '') {
     this.baseUrl = baseUrl;
   }
 
-  private async getHeaders(skipAuth: boolean = false): Promise<Headers> {
+  private getHeaders(skipAuth: boolean = false): Headers {
     const headers = new Headers({
       'Content-Type': 'application/json',
     });
@@ -31,32 +33,53 @@ class ApiClient {
   }
 
   // Forzar logout y redirección al login
-  private forceLogout(): void {
+  private async forceLogout(): Promise<void> {
     // Limpiar store
     useAuthStore.getState().logout();
-    // Limpiar cookie
-    document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
-    // Limpiar localStorage/sessionStorage
-    localStorage.removeItem('contador-auth');
+    // Limpiar sessionStorage
     sessionStorage.removeItem('contador-auth');
     sessionStorage.removeItem('contador-company');
     localStorage.removeItem('plan-config-storage');
+    // Llamar al endpoint de logout para limpiar cookies httpOnly
+    try {
+      await fetch(`${this.baseUrl}/api/auth/logout`, { method: 'POST' });
+    } catch {
+      // Ignorar errores al cerrar sesión
+    }
     // Redirigir al login
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
       window.location.href = '/login';
     }
   }
 
-  private async handleResponse<T>(response: Response): Promise<T> {
-    if (response.status === 401) {
+  private async handleResponse<T>(response: Response, retryFn?: () => Promise<Response>): Promise<T> {
+    if (response.status === 401 && retryFn) {
       // Token expirado, intentar refresh
       const refreshed = await this.refreshToken();
       if (!refreshed) {
         // Logout si no se puede refrescar
-        this.forceLogout();
+        await this.forceLogout();
         throw new Error('Sesión expirada');
       }
-      throw new Error('Token refrescado, reintentar');
+      // Reintentar la solicitud original con el nuevo token
+      const retryResponse = await retryFn();
+      if (!retryResponse.ok) {
+        if (retryResponse.status === 401) {
+          await this.forceLogout();
+          throw new Error('Sesión expirada');
+        }
+        const error = await retryResponse.json().catch(() => ({ error: 'Error desconocido' }));
+        throw new Error(error.error || error.message || 'Error en la solicitud');
+      }
+      if (retryResponse.status === 204) {
+        return {} as T;
+      }
+      return retryResponse.json();
+    }
+
+    if (response.status === 401) {
+      await this.forceLogout();
+      throw new Error('Sesión expirada');
     }
 
     if (!response.ok) {
@@ -72,15 +95,33 @@ class ApiClient {
     return response.json();
   }
 
+  // Refresh con lock para evitar llamadas concurrentes
   private async refreshToken(): Promise<boolean> {
-    const refreshToken = useAuthStore.getState().refreshToken;
-    if (!refreshToken) return false;
+    // Si ya hay un refresh en curso, esperar su resultado
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = this._doRefresh();
 
     try {
+      return await this.refreshPromise;
+    } finally {
+      this.isRefreshing = false;
+      this.refreshPromise = null;
+    }
+  }
+
+  private async _doRefresh(): Promise<boolean> {
+    const refreshToken = useAuthStore.getState().refreshToken;
+
+    try {
+      // Intentar refresh con el token del store, o dejar que el server use la cookie
       const response = await fetch(`${this.baseUrl}/api/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        body: refreshToken ? JSON.stringify({ refreshToken }) : '{}',
       });
 
       if (!response.ok) return false;
@@ -93,72 +134,107 @@ class ApiClient {
     }
   }
 
+  // Helper para crear la función de retry con headers actualizados
+  private createRetryFn(method: string, url: string, options: RequestInit): () => Promise<Response> {
+    return () => {
+      const newHeaders = new Headers(options.headers);
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        newHeaders.set('Authorization', `Bearer ${token}`);
+      }
+      return fetch(url, { ...options, method, headers: newHeaders });
+    };
+  }
+
   async get<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
     const { skipAuth, ...fetchOptions } = options;
-    const headers = await this.getHeaders(skipAuth);
+    const headers = this.getHeaders(skipAuth);
+    const url = `${this.baseUrl}${endpoint}`;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       method: 'GET',
       headers,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(
+      response,
+      skipAuth ? undefined : this.createRetryFn('GET', url, { headers, ...fetchOptions })
+    );
   }
 
   async post<T>(endpoint: string, data?: unknown, options: FetchOptions = {}): Promise<T> {
     const { skipAuth, ...fetchOptions } = options;
-    const headers = await this.getHeaders(skipAuth);
+    const headers = this.getHeaders(skipAuth);
+    const url = `${this.baseUrl}${endpoint}`;
+    const body = data ? JSON.stringify(data) : undefined;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: data ? JSON.stringify(data) : undefined,
+      body,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(
+      response,
+      skipAuth ? undefined : this.createRetryFn('POST', url, { headers, body, ...fetchOptions })
+    );
   }
 
   async put<T>(endpoint: string, data?: unknown, options: FetchOptions = {}): Promise<T> {
     const { skipAuth, ...fetchOptions } = options;
-    const headers = await this.getHeaders(skipAuth);
+    const headers = this.getHeaders(skipAuth);
+    const url = `${this.baseUrl}${endpoint}`;
+    const body = data ? JSON.stringify(data) : undefined;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       method: 'PUT',
       headers,
-      body: data ? JSON.stringify(data) : undefined,
+      body,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(
+      response,
+      skipAuth ? undefined : this.createRetryFn('PUT', url, { headers, body, ...fetchOptions })
+    );
   }
 
   async patch<T>(endpoint: string, data?: unknown, options: FetchOptions = {}): Promise<T> {
     const { skipAuth, ...fetchOptions } = options;
-    const headers = await this.getHeaders(skipAuth);
+    const headers = this.getHeaders(skipAuth);
+    const url = `${this.baseUrl}${endpoint}`;
+    const body = data ? JSON.stringify(data) : undefined;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       method: 'PATCH',
       headers,
-      body: data ? JSON.stringify(data) : undefined,
+      body,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(
+      response,
+      skipAuth ? undefined : this.createRetryFn('PATCH', url, { headers, body, ...fetchOptions })
+    );
   }
 
   async delete<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
     const { skipAuth, ...fetchOptions } = options;
-    const headers = await this.getHeaders(skipAuth);
+    const headers = this.getHeaders(skipAuth);
+    const url = `${this.baseUrl}${endpoint}`;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       method: 'DELETE',
       headers,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(
+      response,
+      skipAuth ? undefined : this.createRetryFn('DELETE', url, { headers, ...fetchOptions })
+    );
   }
 
   // Método especial para subir archivos
@@ -174,16 +250,26 @@ class ApiClient {
     if (!skipAuth && token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
-    // No establecer Content-Type para FormData, el navegador lo hace automáticamente
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const url = `${this.baseUrl}${endpoint}`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: formData,
       ...fetchOptions,
     });
 
-    return this.handleResponse<T>(response);
+    const retryFn = skipAuth ? undefined : () => {
+      const retryHeaders = new Headers();
+      const newToken = useAuthStore.getState().accessToken;
+      if (newToken) {
+        retryHeaders.set('Authorization', `Bearer ${newToken}`);
+      }
+      return fetch(url, { method: 'POST', headers: retryHeaders, body: formData, ...fetchOptions });
+    };
+
+    return this.handleResponse<T>(response, retryFn);
   }
 }
 
@@ -214,6 +300,9 @@ export const authApi = {
       refreshToken: string;
       tokenType: string;
     }>('/api/auth/refresh', { refreshToken }, { skipAuth: true }),
+
+  logout: () =>
+    apiClient.post<{ success: boolean }>('/api/auth/logout', {}, { skipAuth: true }),
 
   getMe: () =>
     apiClient.get<import('@/types').UserWithCompanies>('/api/auth/me'),
@@ -328,6 +417,19 @@ export const companiesApi = {
       backgroundMode?: boolean;
       message: string;
     }>(`/api/companies/${id}/seace-run`, {}),
+
+  // Miembros de empresa
+  listMembers: (id: string) =>
+    apiClient.get<import('@/types').CompanyMember[]>(`/api/companies/${id}/members`),
+
+  addMember: (id: string, data: { email: string; role: import('@/types').CompanyRole }) =>
+    apiClient.post<import('@/types').CompanyMember>(`/api/companies/${id}/members`, data),
+
+  updateMemberRole: (id: string, memberId: string, role: import('@/types').CompanyRole) =>
+    apiClient.patch<import('@/types').CompanyMember>(`/api/companies/${id}/members/${memberId}`, { role }),
+
+  removeMember: (id: string, memberId: string) =>
+    apiClient.delete(`/api/companies/${id}/members/${memberId}`),
 };
 
 // ==================== APIs DE COMPROBANTES ====================
@@ -379,6 +481,39 @@ export const comprobantesApi = {
     apiClient.get<import('@/types').ResumenComprobantes>(
       `/api/companies/${companyId}/comprobantes/resumen?periodo=${periodo}`
     ),
+
+  getHistorico: (companyId: string, meses: number = 6) =>
+    apiClient.get<{
+      historico: Array<{
+        periodo: string;
+        mes: string;
+        ventas: number;
+        compras: number;
+        igvVentas: number;
+        igvCompras: number;
+        igvNeto: number;
+        cantidadVentas: number;
+        cantidadCompras: number;
+      }>;
+      totales: {
+        ventas: number;
+        compras: number;
+        igvVentas: number;
+        igvCompras: number;
+        comprobantes: number;
+      };
+      promedios: {
+        ventasMensual: number;
+        comprasMensual: number;
+        igvMensual: number;
+        margenBruto: number;
+      };
+      tendencia: {
+        ventas: number;
+        compras: number;
+      };
+      periodos: number;
+    }>(`/api/companies/${companyId}/stats/historico?meses=${meses}`),
 };
 
 // ==================== APIs DE IMPORTACIÓN ====================
@@ -425,7 +560,6 @@ export const importApi = {
     }>('/api/sire/import', formData);
   },
 
-  // tipoOperacion ahora es opcional - se detecta automáticamente del XML
   importXML: (companyId: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);

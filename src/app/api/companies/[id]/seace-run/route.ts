@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
+import { requireCompanyAccess, isAccessError, MANAGE_ROLES } from '@/lib/company-access';
 import { prisma } from '@/lib/prisma';
 import { encryptionService } from '@/lib/encryption';
 import { runSeacePuppeteerScraper } from '@/lib/scraping/seace-puppeteer';
@@ -14,22 +14,12 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
+    // Obtener datos específicos de SEACE de la empresa
+    const company = await prisma.company.findUnique({
+      where: { id: params.id },
       select: {
         id: true,
         ruc: true,

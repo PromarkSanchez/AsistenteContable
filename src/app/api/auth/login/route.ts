@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
-import { createTokens } from '@/lib/jwt';
+import { createTokens, JWT_EXPIRES_IN, REFRESH_TOKEN_EXPIRES_IN, parseTimeToSeconds } from '@/lib/jwt';
 import { loginSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
 
@@ -67,12 +67,21 @@ export async function POST(request: NextRequest) {
       ...tokens,
     });
 
-    // Establecer cookie desde el servidor
+    // Cookie de access token (httpOnly para seguridad)
     response.cookies.set('contador-auth', tokens.accessToken, {
-      httpOnly: false,
+      httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30, // 30 días
+      maxAge: parseTimeToSeconds(JWT_EXPIRES_IN),
+      path: '/',
+    });
+
+    // Cookie de refresh token (httpOnly, duración más larga)
+    response.cookies.set('contador-refresh', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: parseTimeToSeconds(REFRESH_TOKEN_EXPIRES_IN),
       path: '/',
     });
 

@@ -1,6 +1,10 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-encryption-key-change-in-production';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  console.warn('WARNING: ENCRYPTION_KEY no está configurado. Usando valor por defecto inseguro.');
+}
+const ENCRYPTION_KEY_VALUE = ENCRYPTION_KEY || 'dev-only-key-do-not-use-in-production';
 
 // Derivar clave de 32 bytes usando SHA256 (compatible con Python Fernet)
 function deriveKey(secret: string): Buffer {
@@ -15,7 +19,7 @@ export class EncryptionService {
   private key: Buffer;
 
   constructor(secretKey?: string) {
-    this.key = deriveKey(secretKey || ENCRYPTION_KEY);
+    this.key = deriveKey(secretKey || ENCRYPTION_KEY_VALUE);
   }
 
   /**

@@ -45,11 +45,13 @@ export default function AdminLayout({
   const { user, isAuthenticated, isLoading, logout } = useAuthStore();
   const { appName, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
 
-  const handleLogout = () => {
-    // Eliminar cookie
-    document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
-    // Limpiar localStorage
-    localStorage.removeItem('contador-auth');
+  const handleLogout = async () => {
+    // Limpiar cookies httpOnly via el servidor
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Continuar con logout local aunque falle
+    }
     logout();
     window.location.href = '/login';
   };

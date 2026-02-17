@@ -5,7 +5,7 @@ import { encrypt } from '@/lib/encryption';
 import { ZodError } from 'zod';
 import { PLAN_LIMITS } from '@/lib/utils';
 
-// GET /api/companies - Listar empresas del usuario
+// GET /api/companies - Listar empresas del usuario (propias + compartidas)
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id');
@@ -17,22 +17,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Buscar empresas donde el usuario es miembro (propias + compartidas)
     const companies = await prisma.company.findMany({
-      where: { userId },
+      where: {
+        members: { some: { userId } },
+      },
+      include: {
+        members: {
+          where: { userId },
+          select: { role: true },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
     // Transformar para agregar flags y ocultar datos sensibles
-    type CompanyType = { usuarioSol: string | null; certificadoDigital: Buffer | null; [key: string]: unknown };
-    const companiesResponse = companies.map((company: CompanyType) => ({
-      ...company,
-      hasCredentials: !!company.usuarioSol,
-      hasCertificado: !!company.certificadoDigital,
-      // No exponer datos sensibles
-      claveSolEncrypted: undefined,
-      certificadoDigital: undefined,
-      certificadoPasswordEncrypted: undefined,
-    }));
+    const companiesResponse = companies.map((company: typeof companies[number]) => {
+      const { members, ...companyData } = company;
+      return {
+        ...companyData,
+        myRole: members[0]?.role || null,
+        hasCredentials: !!company.usuarioSol,
+        hasCertificado: !!company.certificadoDigital,
+        // No exponer datos sensibles
+        claveSolEncrypted: undefined,
+        certificadoDigital: undefined,
+        certificadoPasswordEncrypted: undefined,
+      };
+    });
 
     return NextResponse.json(companiesResponse);
   } catch (error) {
@@ -78,7 +90,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar límite de empresas según plan
+    // Verificar límite de empresas según plan (solo empresas propias)
     const limit = PLAN_LIMITS[user.plan as keyof typeof PLAN_LIMITS] || 1;
     if (user._count.companies >= limit) {
       return NextResponse.json(
@@ -101,33 +113,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Crear empresa
-    const company = await prisma.company.create({
-      data: {
-        userId,
-        ruc: validatedData.ruc,
-        razonSocial: validatedData.razonSocial,
-        nombreComercial: validatedData.nombreComercial || null,
-        regimen: validatedData.regimen,
-        tipoContribuyente: validatedData.tipoContribuyente || null,
-        direccionFiscal: validatedData.direccionFiscal || null,
-        ubigeo: validatedData.ubigeo || null,
-        telefono: validatedData.telefono || null,
-        email: validatedData.email || null,
-        coeficienteRenta: validatedData.coeficienteRenta || '0.0150',
-      },
-    });
+    // Crear empresa y miembro OWNER en una transacción
+    const company = await prisma.$transaction(async (tx: typeof prisma) => {
+      const newCompany = await tx.company.create({
+        data: {
+          userId,
+          ruc: validatedData.ruc,
+          razonSocial: validatedData.razonSocial,
+          nombreComercial: validatedData.nombreComercial || null,
+          regimen: validatedData.regimen,
+          tipoContribuyente: validatedData.tipoContribuyente || null,
+          direccionFiscal: validatedData.direccionFiscal || null,
+          ubigeo: validatedData.ubigeo || null,
+          telefono: validatedData.telefono || null,
+          email: validatedData.email || null,
+          coeficienteRenta: validatedData.coeficienteRenta || '0.0150',
+        },
+      });
 
-    // Crear registro de storage
-    await prisma.storageUsage.create({
-      data: {
-        companyId: company.id,
-      },
+      // Crear miembro OWNER automáticamente
+      await tx.companyMember.create({
+        data: {
+          companyId: newCompany.id,
+          userId,
+          role: 'OWNER',
+        },
+      });
+
+      // Crear registro de storage
+      await tx.storageUsage.create({
+        data: {
+          companyId: newCompany.id,
+        },
+      });
+
+      return newCompany;
     });
 
     return NextResponse.json(
       {
         ...company,
+        myRole: 'OWNER',
         hasCredentials: false,
         hasCertificado: false,
       },

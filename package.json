@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && tsx prisma/seed-plans.ts && next build",
+    "build": "prisma generate && tsx prisma/seed-plans.ts && tsx prisma/migrate-company-members.ts && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@aws-sdk/client-bedrock-runtime": "^3.971.0",
+    "@ericblade/quagga2": "^1.12.1",
     "@hookform/resolvers": "^3.9.1",
     "@prisma/client": "^5.22.0",
     "@prisma/extension-accelerate": "^3.0.1",
@@ -44,8 +45,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.1",
+    "recharts": "^2.12.7",
     "soap": "^1.1.6",
     "tailwind-merge": "^2.5.5",
+    "tesseract.js": "^7.0.0",
     "tsx": "^4.19.2",
     "xlsx": "^0.18.5",
     "xml-crypto": "^6.0.0",

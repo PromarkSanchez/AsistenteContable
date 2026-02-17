@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useCompanyStore } from '@/store/company-store';
 import { useBrandingStore } from '@/store/branding-store';
@@ -27,7 +28,21 @@ import {
   PiggyBank,
   ArrowUpRight,
   ArrowDownRight,
+  BarChart3,
 } from 'lucide-react';
+
+// Importación dinámica para evitar errores de SSR con recharts
+const StatsCharts = dynamic(
+  () => import('@/components/dashboard/stats-charts').then(mod => mod.StatsCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    )
+  }
+);
 
 // Función para calcular fecha de vencimiento PDT según último dígito del RUC
 function getVencimientoPDT(ruc: string, periodo: string): Date {
@@ -524,6 +539,17 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          {/* Gráficos y Tendencias */}
+          <div className="pt-4">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Análisis y Tendencias
+              </h2>
+            </div>
+            <StatsCharts companyId={selectedCompany.id} />
           </div>
 
           {/* Quick actions */}

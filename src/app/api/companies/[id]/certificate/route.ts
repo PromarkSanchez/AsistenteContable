@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
+import { requireCompanyAccess, isAccessError, MANAGE_ROLES } from '@/lib/company-access';
 import { prisma } from '@/lib/prisma';
 import { encryptionService } from '@/lib/encryption';
-import { z } from 'zod';
 
 const MAX_CERTIFICATE_SIZE = 50 * 1024; // 50KB máximo para certificados
-
-const certificateSchema = z.object({
-  password: z.string().min(1, 'Contraseña del certificado requerida'),
-});
 
 // POST /api/companies/[id]/certificate - Subir certificado digital
 export async function POST(
@@ -16,27 +11,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
-
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
-    });
-
-    if (!company) {
-      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     const formData = await request.formData();
     const file = formData.get('certificate') as File | null;
@@ -133,26 +109,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
-
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
-    });
-
-    if (!company) {
-      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     // Actualizar almacenamiento
     await prisma.storageUsage.updateMany({

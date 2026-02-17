@@ -35,8 +35,8 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken, refreshToken, isAuthenticated: !!accessToken }),
 
       login: (user, accessToken, refreshToken) => {
-        // Cookie de sesión (sin max-age expira al cerrar el navegador)
-        document.cookie = `contador-auth=${accessToken}; path=/; SameSite=Lax`;
+        // Las cookies httpOnly son manejadas por el servidor
+        // Solo guardamos tokens en el store para las llamadas API
         set({
           user,
           accessToken,
@@ -47,10 +47,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        // Eliminar cookie
-        document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
         // Limpiar sessionStorage de empresa para evitar mezcla de datos entre cuentas
         sessionStorage.removeItem('contador-company');
+        // Las cookies httpOnly se limpian via /api/auth/logout
         set({
           user: null,
           accessToken: null,
@@ -71,7 +70,6 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'contador-auth',
-      // Usar sessionStorage para que la sesión se elimine al cerrar el navegador
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
@@ -79,9 +77,6 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
-      onRehydrateStorage: () => (state) => {
-        // No hacer nada especial - el middleware maneja la autenticación
-      },
     }
   )
 );

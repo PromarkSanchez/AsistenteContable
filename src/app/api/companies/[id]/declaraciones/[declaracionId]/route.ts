@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { calcularTributosDelPeriodo } from '@/services/calculadora-tributaria.service';
 import { declaracionUpdateSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
+import { requireCompanyAccess, isAccessError, READ_ROLES, WRITE_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string; declaracionId: string };
@@ -11,26 +12,10 @@ interface RouteParams {
 // GET /api/companies/[id]/declaraciones/[declaracionId]
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, declaracionId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, READ_ROLES);
+    if (isAccessError(access)) return access;
 
     const declaracion = await prisma.declaracionPDT621.findFirst({
       where: { id: declaracionId, companyId },
@@ -81,26 +66,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PUT /api/companies/[id]/declaraciones/[declaracionId]
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, declaracionId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, WRITE_ROLES);
+    if (isAccessError(access)) return access;
 
     const existingDeclaracion = await prisma.declaracionPDT621.findFirst({
       where: { id: declaracionId, companyId },
@@ -181,26 +150,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/companies/[id]/declaraciones/[declaracionId]
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id: companyId, declaracionId } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    const company = await prisma.company.findFirst({
-      where: { id: companyId, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, companyId, WRITE_ROLES);
+    if (isAccessError(access)) return access;
 
     const declaracion = await prisma.declaracionPDT621.findFirst({
       where: { id: declaracionId, companyId },

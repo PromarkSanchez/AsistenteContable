@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getStringSize } from '@/lib/utils';
+import { requireCompanyAccess, isAccessError, MANAGE_ROLES } from '@/lib/company-access';
 
 interface RouteParams {
   params: { id: string };
@@ -9,27 +10,10 @@ interface RouteParams {
 // POST /api/companies/[id]/logo - Subir logo
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: { id, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -92,27 +76,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/companies/[id]/logo - Eliminar logo
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const userId = request.headers.get('x-user-id');
     const { id } = params;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'No autorizado' },
-        { status: 401 }
-      );
-    }
-
-    // Verificar que la empresa pertenece al usuario
-    const company = await prisma.company.findFirst({
-      where: { id, userId },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
-      );
-    }
+    const access = await requireCompanyAccess(request, id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     // Eliminar logo
     await prisma.company.update({

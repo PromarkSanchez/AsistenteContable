@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAccessToken, extractTokenFromHeader } from '@/lib/jwt';
+import { requireCompanyAccess, isAccessError, MANAGE_ROLES } from '@/lib/company-access';
 import { prisma } from '@/lib/prisma';
 import { encryptionService } from '@/lib/encryption';
 import { z } from 'zod';
@@ -28,21 +28,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
+    const company = await prisma.company.findUnique({
+      where: { id: params.id },
       select: {
         usuarioSeace: true,
         claveSeaceEncrypted: true,
@@ -82,26 +72,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
-
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
-    });
-
-    if (!company) {
-      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     const body = await request.json();
     const validation = seaceUpdateSchema.safeParse(body);
@@ -167,26 +139,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = extractTokenFromHeader(request.headers.get('authorization'));
-    if (!token) {
-      return NextResponse.json({ error: 'Token requerido' }, { status: 401 });
-    }
-
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
-
-    const company = await prisma.company.findFirst({
-      where: {
-        id: params.id,
-        userId: payload.sub,
-      },
-    });
-
-    if (!company) {
-      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 });
-    }
+    const access = await requireCompanyAccess(request, params.id, MANAGE_ROLES);
+    if (isAccessError(access)) return access;
 
     await prisma.company.update({
       where: { id: params.id },

@@ -18,6 +18,9 @@ export type EstadoDeclaracion = 'BORRADOR' | 'CALCULADA' | 'GENERADA' | 'PRESENT
 // Estados de upload
 export type UploadStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
+// Roles de acceso a empresa
+export type CompanyRole = 'OWNER' | 'ADMIN' | 'ACCOUNTANT' | 'VIEWER';
+
 // ==================== USUARIO ====================
 
 export interface User {
@@ -67,6 +70,25 @@ export interface Company {
 
 export interface CompanyWithUser extends Company {
   user: User;
+}
+
+// ==================== MIEMBROS DE EMPRESA ====================
+
+export interface CompanyMember {
+  id: string;
+  companyId: string;
+  userId: string;
+  role: CompanyRole;
+  createdAt: string;
+  user?: {
+    id: string;
+    email: string;
+    fullName: string | null;
+  };
+}
+
+export interface CompanyWithRole extends Company {
+  myRole: CompanyRole | null;
 }
 
 // ==================== COMPROBANTE ====================

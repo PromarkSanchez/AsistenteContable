@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Buscar usuario con sus empresas
+    // Buscar usuario
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -28,33 +28,6 @@ export async function GET(request: NextRequest) {
         plan: true,
         createdAt: true,
         updatedAt: true,
-        companies: {
-          select: {
-            id: true,
-            ruc: true,
-            razonSocial: true,
-            nombreComercial: true,
-            regimen: true,
-            tipoContribuyente: true,
-            direccionFiscal: true,
-            ubigeo: true,
-            telefono: true,
-            email: true,
-            coeficienteRenta: true,
-            logoBase64: true,
-            serieFactura: true,
-            serieBoleta: true,
-            ultimoNumeroFactura: true,
-            ultimoNumeroBoleta: true,
-            usuarioSol: true,
-            certificadoDigital: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        },
       },
     });
 
@@ -65,17 +38,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Buscar empresas donde el usuario es miembro (propias + compartidas)
+    const companies = await prisma.company.findMany({
+      where: {
+        members: { some: { userId } },
+      },
+      include: {
+        members: {
+          where: { userId },
+          select: { role: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // Transformar empresas para agregar campos calculados
-    type CompanyType = { usuarioSol: string | null; certificadoDigital: Buffer | null; [key: string]: unknown };
-    const companiesWithFlags = user.companies.map((company: CompanyType) => ({
-      ...company,
-      hasCredentials: !!company.usuarioSol,
-      hasCertificado: !!company.certificadoDigital,
-      // No exponer datos sensibles
-      claveSolEncrypted: undefined,
-      certificadoDigital: undefined,
-      certificadoPassword: undefined,
-    }));
+    const companiesWithFlags = companies.map((company: typeof companies[number]) => {
+      const { members, ...companyData } = company;
+      return {
+        ...companyData,
+        myRole: members[0]?.role || null,
+        hasCredentials: !!company.usuarioSol,
+        hasCertificado: !!company.certificadoDigital,
+        // No exponer datos sensibles
+        claveSolEncrypted: undefined,
+        certificadoDigital: undefined,
+        certificadoPasswordEncrypted: undefined,
+      };
+    });
 
     return NextResponse.json({
       ...user,

@@ -30,6 +30,8 @@ import {
   Bell,
   Bot,
   Camera,
+  ScanLine,
+  Wallet,
   LucideIcon,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -51,6 +53,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Bot,
   Building2,
   Camera,
+  ScanLine,
+  Wallet,
 };
 
 // Menús por defecto (fallback si no hay configuración)
@@ -67,6 +71,7 @@ const defaultMenuItems = [
   { key: 'alertas', href: '/alertas', label: 'Alertas', icon: Bell },
   { key: 'asistente', href: '/asistente', label: 'Asistente IA', icon: Bot },
   { key: 'fotochecks', href: '/fotochecks', label: 'Fotochecks', icon: BadgeCheck },
+  { key: 'renombrar-imagenes', href: '/renombrar-imagenes', label: 'Renombrar Imágenes', icon: ScanLine },
   { key: 'configuracion', href: '/configuracion', label: 'Configuración', icon: Settings },
 ];
 
@@ -84,10 +89,39 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
 
-  const { user, isAuthenticated, logout, accessToken } = useAuthStore();
+  const { user, isAuthenticated, logout, accessToken, login, setLoading } = useAuthStore();
   const { selectedCompany, companies, setSelectedCompany, setCompanies } = useCompanyStore();
   const { appName, logoBase64, loadBranding, isLoaded: brandingLoaded } = useBrandingStore();
   const { menus: planMenus, isSuperadmin, fetchPlanConfig } = usePlanConfigStore();
+  const [sessionRecovered, setSessionRecovered] = useState(false);
+
+  // Recuperar sesión si el store está vacío pero el middleware dejó pasar
+  // (nueva pestaña, recarga, etc. - la cookie httpOnly sigue válida)
+  useEffect(() => {
+    if (!isAuthenticated && !sessionRecovered) {
+      setSessionRecovered(true);
+      setLoading(true);
+      fetch('/api/auth/me')
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error('No autenticado');
+        })
+        .then(userData => {
+          // Recuperar datos del usuario desde el servidor
+          // Los tokens se manejan via cookies httpOnly, pero guardamos referencia
+          login(userData, 'cookie-managed', 'cookie-managed');
+          if (userData.companies) {
+            setCompanies(userData.companies);
+          }
+        })
+        .catch(() => {
+          // No hay sesión válida, el middleware redirigirá a login
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [isAuthenticated, sessionRecovered, login, setLoading, setCompanies]);
 
   // Cargar branding al montar
   useEffect(() => {
@@ -114,7 +148,8 @@ export default function DashboardLayout({
     if (planMenus && planMenus.length > 0) {
       return planMenus.map(menu => {
         const defaultMenu = defaultMenuItems.find(d => d.key === menu.key);
-        const iconComponent = menu.icon ? ICON_MAP[menu.icon] : defaultMenu?.icon || FileText;
+        // Asegurar que siempre haya un icono válido
+        const iconComponent = (menu.icon && ICON_MAP[menu.icon]) || defaultMenu?.icon || FileText;
         return {
           key: menu.key,
           href: menu.path || defaultMenu?.href || '/',
@@ -130,7 +165,7 @@ export default function DashboardLayout({
 
     // Fallback: menús básicos para plan FREE
     return defaultMenuItems.filter(item =>
-      ['dashboard', 'comprobantes', 'importar', 'terceros', 'configuracion'].includes(item.key)
+      ['dashboard', 'comprobantes', 'importar', 'terceros', 'renombrar-imagenes', 'configuracion'].includes(item.key)
     );
   }, [planMenus, isSuperadmin, user?.isSuperadmin]);
 
@@ -153,11 +188,14 @@ export default function DashboardLayout({
     }
   }, [isAuthenticated, companies.length, setCompanies]);
 
-  const handleLogout = () => {
-    // Eliminar cookie
-    document.cookie = 'contador-auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
-    // Limpiar localStorage
-    localStorage.removeItem('contador-auth');
+  const handleLogout = async () => {
+    // Limpiar cookies httpOnly via el servidor
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Continuar con logout local aunque falle
+    }
+    // Limpiar store
     logout();
     window.location.href = '/login';
   };
